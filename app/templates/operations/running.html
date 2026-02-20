@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Running Operations - rClone GUI{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4><i class="bi bi-play-circle"></i> Running Operations</h4>
+</div>
+
+<div id="running-operations">
+    {% if runs %}
+        {% for run in runs %}
+        <div class="card bg-dark border-secondary mb-3 transfer-item" data-run-id="{{ run.id }}">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div>
+                        <h5 class="mb-1">{{ run.job.name if run.job else 'Unknown Job' }}</h5>
+                        <small class="text-muted">
+                            {{ run.job.sync_type if run.job else '' }} &middot;
+                            Started {{ run.started_at.strftime('%Y-%m-%d %H:%M:%S') if run.started_at else 'unknown' }}
+                            &middot; rclone job #{{ run.rclone_jobid }}
+                        </small>
+                    </div>
+                    <form action="{{ url_for('ops.stop_job', run_id=run.id) }}" method="post">
+                        <button type="submit" class="btn btn-danger">
+                            <i class="bi bi-stop-fill"></i> Stop
+                        </button>
+                    </form>
+                </div>
+
+                <div class="progress mb-2" style="height: 25px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated bg-success"
+                         role="progressbar" style="width: 0%">0%</div>
+                </div>
+
+                <div class="row text-center">
+                    <div class="col">
+                        <small class="text-muted">Speed</small>
+                        <div class="transfer-speed">--</div>
+                    </div>
+                    <div class="col">
+                        <small class="text-muted">Transferred</small>
+                        <div class="transfer-bytes">--</div>
+                    </div>
+                    <div class="col">
+                        <small class="text-muted">Files</small>
+                        <div class="transfer-files">--</div>
+                    </div>
+                    <div class="col">
+                        <small class="text-muted">Errors</small>
+                        <div class="transfer-errors">--</div>
+                    </div>
+                    <div class="col">
+                        <small class="text-muted">ETA</small>
+                        <div class="transfer-eta">--</div>
+                    </div>
+                </div>
+
+                <!-- Currently transferring files -->
+                <div class="mt-3 current-files" style="display: none;">
+                    <small class="text-muted">Currently transferring:</small>
+                    <div class="file-list"></div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="text-center py-5">
+            <i class="bi bi-pause-circle display-1 text-muted"></i>
+            <p class="text-muted mt-3">No operations running.</p>
+            <a href="{{ url_for('jobs.list_jobs') }}" class="btn btn-outline-success">
+                <i class="bi bi-play-fill"></i> Start a Job
+            </a>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

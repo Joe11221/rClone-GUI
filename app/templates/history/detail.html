@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Run #{{ run.id }} - rClone GUI{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h4><i class="bi bi-journal-text"></i> Run #{{ run.id }}</h4>
+            <a href="{{ url_for('history.list_history') }}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Back
+            </a>
+        </div>
+
+        <div class="card bg-dark border-secondary mb-3">
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <table class="table table-dark table-borderless mb-0">
+                            <tr>
+                                <td class="text-muted">Job</td>
+                                <td><strong>{{ run.job.name if run.job else 'Deleted Job' }}</strong></td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">Status</td>
+                                <td>
+                                    {% if run.status == 'running' %}
+                                        <span class="badge bg-primary">Running</span>
+                                    {% elif run.status == 'completed' %}
+                                        <span class="badge bg-success">Completed</span>
+                                    {% elif run.status == 'failed' %}
+                                        <span class="badge bg-danger">Failed</span>
+                                    {% elif run.status == 'stopped' %}
+                                        <span class="badge bg-warning text-dark">Stopped</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">Triggered By</td>
+                                <td><span class="badge bg-secondary">{{ run.triggered_by }}</span></td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">rclone Job ID</td>
+                                <td>{{ run.rclone_jobid or '--' }}</td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <table class="table table-dark table-borderless mb-0">
+                            <tr>
+                                <td class="text-muted">Started</td>
+                                <td>{{ run.started_at.strftime('%Y-%m-%d %H:%M:%S') if run.started_at else '--' }}</td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">Finished</td>
+                                <td>{{ run.finished_at.strftime('%Y-%m-%d %H:%M:%S') if run.finished_at else '--' }}</td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted">Duration</td>
+                                <td>
+                                    {% if run.started_at and run.finished_at %}
+                                        {{ (run.finished_at - run.started_at)|string }}
+                                    {% else %}
+                                        --
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card bg-dark border-secondary mb-3">
+            <div class="card-header">Transfer Stats</div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-md-4">
+                        <h5>{{ (run.bytes_transferred / 1073741824)|round(2) if run.bytes_transferred else 0 }} GB</h5>
+                        <small class="text-muted">Bytes Transferred</small>
+                    </div>
+                    <div class="col-md-4">
+                        <h5>{{ run.files_transferred or 0 }}</h5>
+                        <small class="text-muted">Files Transferred</small>
+                    </div>
+                    <div class="col-md-4">
+                        <h5 class="{{ 'text-danger' if run.errors else '' }}">{{ run.errors or 0 }}</h5>
+                        <small class="text-muted">Errors</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {% if run.error_message %}
+        <div class="card bg-dark border-danger mb-3">
+            <div class="card-header text-danger">Error Details</div>
+            <div class="card-body">
+                <pre class="mb-0 text-danger">{{ run.error_message }}</pre>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if run.job %}
+        <div class="card bg-dark border-secondary">
+            <div class="card-header">Job Configuration</div>
+            <div class="card-body">
+                <table class="table table-dark table-borderless mb-0">
+                    <tr><td class="text-muted">Source</td><td><code>{{ run.job.source }}</code></td></tr>
+                    <tr><td class="text-muted">Destination</td><td><code>{{ run.job.destination }}</code></td></tr>
+                    <tr><td class="text-muted">Sync Type</td><td>{{ run.job.sync_type }}</td></tr>
+                    <tr><td class="text-muted">Transfers</td><td>{{ run.job.transfers }}</td></tr>
+                    <tr><td class="text-muted">Checkers</td><td>{{ run.job.checkers }}</td></tr>
+                    <tr><td class="text-muted">Fast List</td><td>{{ 'Yes' if run.job.fast_list else 'No' }}</td></tr>
+                    <tr><td class="text-muted">BW Limit</td><td>{{ run.job.bwlimit or 'None' }}</td></tr>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
