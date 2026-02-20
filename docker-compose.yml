@@ -1,0 +1,16 @@
+services:
+  rclone-gui:
+    build: .
+    ports:
+      - "${PORT:-8080}:8080"
+    volumes:
+      # Persist SQLite database
+      - ./data:/app/instance
+      # Mount your rclone config (remotes like pcloud are configured here)
+      - ${RCLONE_CONFIG:-~/.config/rclone}:/root/.config/rclone
+      # Mount your data drive (adjust path to your 6TB HDD)
+      - ${DATA_PATH:-/mnt/storage}:/mnt/storage:ro
+    environment:
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+      - RCLONE_RC_URL=http://127.0.0.1:5572
+    restart: unless-stopped

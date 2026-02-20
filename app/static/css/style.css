@@ -1,0 +1,52 @@
+body {
+    background-color: #1a1a2e;
+    min-height: 100vh;
+}
+
+.navbar {
+    background-color: #16213e !important;
+}
+
+.card {
+    border-radius: 0.5rem;
+}
+
+.progress {
+    background-color: #2d2d44;
+    border-radius: 0.375rem;
+}
+
+.progress-bar {
+    transition: width 0.5s ease-in-out;
+}
+
+.transfer-item {
+    transition: opacity 0.3s ease;
+}
+
+.table-dark {
+    --bs-table-bg: transparent;
+}
+
+code {
+    color: #7ec8e3;
+}
+
+.font-monospace {
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
+.file-list .file-item {
+    padding: 0.25rem 0;
+    font-size: 0.85rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.file-list .file-item:last-child {
+    border-bottom: none;
+}
+
+#running-badge {
+    font-size: 0.65rem;
+    vertical-align: top;
+}
