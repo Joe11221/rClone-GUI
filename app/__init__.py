@@ -7,6 +7,40 @@ from app.services.job_runner import JobRunner
 from app.services.scheduler_service import SchedulerService
 
 
+def _ensure_columns():
+    """Add new columns to existing SQLite tables (create_all won't do this)."""
+    from sqlalchemy import inspect, text
+
+    insp = inspect(db.engine)
+
+    job_cols = {c["name"] for c in insp.get_columns("job")}
+    if "auto_resume" not in job_cols:
+        db.session.execute(
+            text("ALTER TABLE job ADD COLUMN auto_resume BOOLEAN DEFAULT 0")
+        )
+        db.session.execute(
+            text("ALTER TABLE job ADD COLUMN max_retries INTEGER DEFAULT 3")
+        )
+        db.session.execute(
+            text(
+                "ALTER TABLE job ADD COLUMN retry_delay_seconds INTEGER DEFAULT 60"
+            )
+        )
+        db.session.commit()
+
+    rh_cols = {c["name"] for c in insp.get_columns("run_history")}
+    if "retry_of_run_id" not in rh_cols:
+        db.session.execute(
+            text("ALTER TABLE run_history ADD COLUMN retry_of_run_id INTEGER")
+        )
+        db.session.execute(
+            text(
+                "ALTER TABLE run_history ADD COLUMN retry_count INTEGER DEFAULT 0"
+            )
+        )
+        db.session.commit()
+
+
 def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
@@ -88,6 +122,7 @@ def create_app(config_class=Config):
     # Create tables and start scheduler on first request
     with app.app_context():
         db.create_all()
+        _ensure_columns()
         job_runner.restore_active_runs()
         scheduler_service.start()
 

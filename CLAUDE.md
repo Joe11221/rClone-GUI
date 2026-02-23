@@ -121,3 +121,20 @@ Source and destination fields in `jobs/form.html` have a **Browse** button (<i c
 - **`lastKnownStats` prevents flicker**: Speed, bytes, and progress values are tracked per run. Cumulative stats (bytes, transfers) never decrease in the display. Speed shows the last non-zero value when rclone briefly reports 0 between file transfers.
 - **"Starting..." text** is preserved in `transfer-detail` until the first non-zero stats arrive, rather than being overwritten with "0 B transferred, 0 files".
 - **File breakdown**: Stats show "New Files" (`stats.transfers` — files actually copied) and "Unchanged" (`stats.checks` — files already matching at destination). These map to rclone's `transfers` and `checks` fields from `core/stats`.
+
+## Auto-Resume Interrupted Jobs
+
+Jobs with `auto_resume=True` (per-job setting in the Job form) will automatically retry when:
+
+1. **Container restart**: `restore_active_runs()` detects orphaned "running" records whose rclone jobs no longer exist, and re-dispatches them. The old run is marked `"interrupted"` and a new `RunHistory` record is created.
+2. **Runtime failure**: `check_and_update_runs()` detects a failed rclone job and schedules a delayed retry via `gevent.spawn_later(retry_delay_seconds, ...)`.
+
+Key design points:
+- Each retry creates a **new RunHistory** record linked via `retry_of_run_id`. The old run is marked `"interrupted"`.
+- `retry_count` tracks position in the chain; checked against `job.max_retries` (default 3).
+- User-stopped runs (`status="stopped"`) are **never** auto-resumed.
+- Retry delay uses `gevent.spawn_later` (not stdlib timers) to stay compatible with the gevent worker model.
+- The `_pending_retries` set in `JobRunner` prevents duplicate retry scheduling from the 10s monitor loop.
+- A manual **Resume** button is available on failed/interrupted runs in the history pages (`POST /ops/resume/<run_id>`). Manual resume bypasses the `auto_resume` toggle check.
+- Move operations may not resume correctly due to partial file relocation — a warning is shown in the job form.
+- `_ensure_columns()` in `app/__init__.py` handles SQLite schema migration for existing databases (adds new columns via `ALTER TABLE` since `create_all()` won't add columns to existing tables).

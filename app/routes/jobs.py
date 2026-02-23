@@ -42,6 +42,11 @@ def create_job():
             bwlimit=request.form.get("bwlimit", ""),
             exclude_patterns=json.dumps(excludes),
             retries=int(request.form.get("retries", 3)),
+            auto_resume="auto_resume" in request.form,
+            max_retries=int(request.form.get("max_retries", 3)),
+            retry_delay_seconds=int(
+                request.form.get("retry_delay_seconds", 60)
+            ),
         )
         db.session.add(job)
         db.session.commit()
@@ -78,6 +83,11 @@ def edit_job(job_id):
         job.bwlimit = request.form.get("bwlimit", "")
         job.exclude_patterns = json.dumps(excludes)
         job.retries = int(request.form.get("retries", 3))
+        job.auto_resume = "auto_resume" in request.form
+        job.max_retries = int(request.form.get("max_retries", 3))
+        job.retry_delay_seconds = int(
+            request.form.get("retry_delay_seconds", 60)
+        )
         db.session.commit()
         flash(f"Job '{job.name}' updated.", "success")
         return redirect(url_for("jobs.list_jobs"))
