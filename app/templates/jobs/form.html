@@ -220,22 +220,26 @@ function showStartPicker() {
     document.getElementById('browse-nav').style.display = 'none';
     document.getElementById('browse-select-btn').style.display = 'none';
 
+    const list = document.getElementById('browse-start-list');
     let html = `
         <button type="button" class="list-group-item list-group-item-action bg-dark text-light border-secondary py-2"
-                onclick="fetchDirs('/')">
+                data-browse-path="/">
             <i class="bi bi-hdd me-2 text-info"></i>/ &nbsp;<span class="text-muted small">(local filesystem root)</span>
         </button>`;
     for (const r of availableRemotes) {
         html += `
         <button type="button" class="list-group-item list-group-item-action bg-dark text-light border-secondary py-2"
-                onclick="fetchDirs(${JSON.stringify(r + ':')})">
+                data-browse-path="${escapeHtml(r + ':')}">
             <i class="bi bi-cloud me-2 text-warning"></i>${escapeHtml(r)}: &nbsp;<span class="text-muted small">(remote)</span>
         </button>`;
     }
     if (!availableRemotes.length) {
         html += `<div class="text-muted small p-2">No remotes configured. Configure them via rclone first.</div>`;
     }
-    document.getElementById('browse-start-list').innerHTML = html;
+    list.innerHTML = html;
+    list.querySelectorAll('[data-browse-path]').forEach(btn => {
+        btn.addEventListener('click', () => fetchDirs(btn.dataset.browsePath));
+    });
 }
 
 function fetchDirs(path) {
@@ -271,10 +275,13 @@ function renderDirs(dirs) {
     }
     list.innerHTML = dirs.map(dir =>
         `<button type="button" class="list-group-item list-group-item-action bg-dark text-light border-secondary py-2"
-                 onclick="navigateInto(${JSON.stringify(dir)})">
+                 data-dir-name="${escapeHtml(dir)}">
             <i class="bi bi-folder me-2 text-warning"></i>${escapeHtml(dir)}
         </button>`
     ).join('');
+    list.querySelectorAll('[data-dir-name]').forEach(btn => {
+        btn.addEventListener('click', () => navigateInto(btn.dataset.dirName));
+    });
 }
 
 function navigateInto(dirName) {
