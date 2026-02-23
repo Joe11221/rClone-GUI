@@ -16,7 +16,7 @@
                         <h5 class="mb-1">{{ run.job.name if run.job else 'Unknown Job' }}</h5>
                         <small class="text-muted">
                             {{ run.job.sync_type if run.job else '' }} &middot;
-                            Started {{ run.started_at.strftime('%Y-%m-%d %H:%M:%S') if run.started_at else 'unknown' }}
+                            Started {{ run.started_at|local_time_sec }}
                             &middot; rclone job #{{ run.rclone_jobid }}
                         </small>
                     </div>

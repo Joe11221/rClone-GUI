@@ -41,18 +41,20 @@
                         <small class="text-muted">(retry #{{ run.retry_count }})</small>
                     {% endif %}
                 </td>
-                <td>{{ run.started_at.strftime('%Y-%m-%d %H:%M') if run.started_at else '--' }}</td>
-                <td>{{ run.finished_at.strftime('%Y-%m-%d %H:%M') if run.finished_at else '--' }}</td>
+                <td>{{ run.started_at|local_time }}</td>
+                <td>{{ run.finished_at|local_time }}</td>
                 <td>
                     {% if run.started_at and run.finished_at %}
-                        {{ (run.finished_at - run.started_at)|string }}
+                        {{ (run.finished_at - run.started_at)|fmt_duration }}
+                    {% elif run.status == 'running' %}
+                        <span class="text-muted">In progress...</span>
                     {% else %}
                         --
                     {% endif %}
                 </td>
                 <td>
-                    {% if run.bytes_transferred %}
-                        {{ (run.bytes_transferred / 1048576)|round(1) }} MB
+                    {% if run.status in ['completed', 'failed', 'stopped', 'interrupted'] %}
+                        {{ run.bytes_transferred|fmt_bytes }}
                     {% else %}
                         --
                     {% endif %}

@@ -10,3 +10,4 @@ class Config:
     RCLONE_RC_URL = os.environ.get("RCLONE_RC_URL", "http://localhost:5572")
     RCLONE_RC_USER = os.environ.get("RCLONE_RC_USER", "")
     RCLONE_RC_PASS = os.environ.get("RCLONE_RC_PASS", "")
+    TIMEZONE = os.environ.get("TIMEZONE", "America/New_York")

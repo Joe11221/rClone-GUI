@@ -72,17 +72,19 @@
                         <table class="table table-dark table-borderless mb-0">
                             <tr>
                                 <td class="text-muted">Started</td>
-                                <td>{{ run.started_at.strftime('%Y-%m-%d %H:%M:%S') if run.started_at else '--' }}</td>
+                                <td>{{ run.started_at|local_time_sec }}</td>
                             </tr>
                             <tr>
                                 <td class="text-muted">Finished</td>
-                                <td>{{ run.finished_at.strftime('%Y-%m-%d %H:%M:%S') if run.finished_at else '--' }}</td>
+                                <td>{{ run.finished_at|local_time_sec }}</td>
                             </tr>
                             <tr>
                                 <td class="text-muted">Duration</td>
                                 <td>
                                     {% if run.started_at and run.finished_at %}
-                                        {{ (run.finished_at - run.started_at)|string }}
+                                        {{ (run.finished_at - run.started_at)|fmt_duration }}
+                                    {% elif run.status == 'running' %}
+                                        <span class="text-muted">In progress...</span>
                                     {% else %}
                                         --
                                     {% endif %}
@@ -99,8 +101,8 @@
             <div class="card-body">
                 <div class="row text-center">
                     <div class="col-md-4">
-                        <h5>{{ (run.bytes_transferred / 1073741824)|round(2) if run.bytes_transferred else 0 }} GB</h5>
-                        <small class="text-muted">Bytes Transferred</small>
+                        <h5>{{ run.bytes_transferred|fmt_bytes }}</h5>
+                        <small class="text-muted">Transferred</small>
                     </div>
                     <div class="col-md-4">
                         <h5>{{ run.files_transferred or 0 }}</h5>

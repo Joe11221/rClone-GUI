@@ -145,12 +145,14 @@
                                     <span class="badge bg-danger"><i class="bi bi-x-lg"></i> Failed</span>
                                 {% elif run.status == 'stopped' %}
                                     <span class="badge bg-warning text-dark"><i class="bi bi-stop-fill"></i> Stopped</span>
+                                {% elif run.status == 'interrupted' %}
+                                    <span class="badge bg-info"><i class="bi bi-pause-circle"></i> Interrupted</span>
                                 {% endif %}
                             </td>
-                            <td>{{ run.started_at.strftime('%Y-%m-%d %H:%M') if run.started_at else '--' }}</td>
+                            <td>{{ run.started_at|local_time }}</td>
                             <td>
                                 {% if run.started_at and run.finished_at %}
-                                    {{ (run.finished_at - run.started_at)|string }}
+                                    {{ (run.finished_at - run.started_at)|fmt_duration }}
                                 {% elif run.status == 'running' %}
                                     <span class="text-muted">In progress...</span>
                                 {% else %}
@@ -158,9 +160,11 @@
                                 {% endif %}
                             </td>
                             <td>
-                                {% if run.bytes_transferred %}
-                                    {{ (run.bytes_transferred / 1048576)|round(1) }} MB
-                                    ({{ run.files_transferred }} files)
+                                {% if run.status in ['completed', 'failed', 'stopped', 'interrupted'] %}
+                                    {{ run.bytes_transferred|fmt_bytes }}
+                                    ({{ run.files_transferred or 0 }} files)
+                                {% elif run.status == 'running' %}
+                                    <span class="text-muted">In progress...</span>
                                 {% else %}
                                     --
                                 {% endif %}

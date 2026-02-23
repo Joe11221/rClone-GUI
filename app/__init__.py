@@ -1,3 +1,6 @@
+from datetime import timezone
+from zoneinfo import ZoneInfo
+
 from flask import Flask
 
 from app.config import Config
@@ -82,6 +85,51 @@ def create_app(config_class=Config):
     app.register_blueprint(history_bp, url_prefix="/history")
     app.register_blueprint(sse_bp)
     app.register_blueprint(settings_bp, url_prefix="/settings")
+
+    # --- Jinja2 template filters ---
+
+    tz = ZoneInfo(app.config.get("TIMEZONE", "America/New_York"))
+
+    @app.template_filter("local_time")
+    def local_time_filter(dt, fmt="%Y-%m-%d %H:%M"):
+        """Convert a naive-UTC datetime to the configured local timezone."""
+        if dt is None:
+            return "--"
+        utc_dt = dt.replace(tzinfo=timezone.utc)
+        return utc_dt.astimezone(tz).strftime(fmt)
+
+    @app.template_filter("local_time_sec")
+    def local_time_sec_filter(dt):
+        """Like local_time but includes seconds."""
+        return local_time_filter(dt, fmt="%Y-%m-%d %H:%M:%S")
+
+    @app.template_filter("fmt_duration")
+    def fmt_duration_filter(td):
+        """Format a timedelta as a human-readable string (e.g. '1h 23m 45s')."""
+        if td is None:
+            return "--"
+        total = int(td.total_seconds())
+        if total < 0:
+            return "--"
+        hours, remainder = divmod(total, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        if hours > 0:
+            return f"{hours}h {minutes}m {seconds}s"
+        if minutes > 0:
+            return f"{minutes}m {seconds}s"
+        return f"{seconds}s"
+
+    @app.template_filter("fmt_bytes")
+    def fmt_bytes_filter(b):
+        """Format bytes as a human-readable string (e.g. '1.2 GB')."""
+        if b is None:
+            return "--"
+        b = float(b)
+        for unit in ("B", "KB", "MB", "GB", "TB"):
+            if abs(b) < 1024:
+                return f"{b:.1f} {unit}"
+            b /= 1024
+        return f"{b:.1f} PB"
 
     # Dashboard route
     from flask import redirect, render_template, url_for
