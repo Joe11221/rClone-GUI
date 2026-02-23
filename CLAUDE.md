@@ -111,3 +111,13 @@ Source and destination fields in `jobs/form.html` have a **Browse** button (<i c
 - **Frontend**: Bootstrap 5 (CDN), Bootstrap Icons, vanilla JS (no build tools)
 - **Database**: SQLite (persisted in Docker volume at `./data/`)
 - **rclone**: RC API on localhost:5572, started by `entrypoint.sh`
+
+## Live Stats Display (dashboard.js)
+
+`dashboard.js` handles SSE-driven live updates for both the dashboard and the running operations page. Key design decisions:
+
+- **Both pages must include `dashboard.js`** via `{% block scripts %}`. The running tab (`operations/running.html`) uses the same SSE listener as the dashboard.
+- **Progress uses `bytes/totalBytes`** for overall job progress, not the average of currently-in-flight file percentages (which flickers as files start/finish).
+- **`lastKnownStats` prevents flicker**: Speed, bytes, and progress values are tracked per run. Cumulative stats (bytes, transfers) never decrease in the display. Speed shows the last non-zero value when rclone briefly reports 0 between file transfers.
+- **"Starting..." text** is preserved in `transfer-detail` until the first non-zero stats arrive, rather than being overwritten with "0 B transferred, 0 files".
+- **File breakdown**: Stats show "New Files" (`stats.transfers` — files actually copied) and "Unchanged" (`stats.checks` — files already matching at destination). These map to rclone's `transfers` and `checks` fields from `core/stats`.

@@ -42,8 +42,12 @@
                         <div class="transfer-bytes">--</div>
                     </div>
                     <div class="col">
-                        <small class="text-muted">Files</small>
+                        <small class="text-muted">New Files</small>
                         <div class="transfer-files">--</div>
+                    </div>
+                    <div class="col">
+                        <small class="text-muted">Unchanged</small>
+                        <div class="transfer-checks">--</div>
                     </div>
                     <div class="col">
                         <small class="text-muted">Errors</small>
@@ -73,4 +77,8 @@
         </div>
     {% endif %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 {% endblock %}
