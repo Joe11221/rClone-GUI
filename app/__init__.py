@@ -28,8 +28,8 @@ def create_app(config_class=Config):
     job_runner = JobRunner(rclone)
     app.config["JOB_RUNNER"] = job_runner
 
-    # Initialize stats collector
-    collector = StatsCollector(rclone, interval=2.0)
+    # Initialize stats collector (only tracks runs our app started)
+    collector = StatsCollector(rclone, job_runner, interval=2.0)
     app.config["STATS_COLLECTOR"] = collector
     collector.start()
 

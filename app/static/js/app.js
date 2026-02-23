@@ -60,12 +60,11 @@ function connectSSE() {
     evtSource.onmessage = function(event) {
         try {
             const data = JSON.parse(event.data);
-            if (!data || !data.stats) return;
+            if (!data) return;
             lastData = data;
 
-            // Update running badge
-            const runningCount = data.jobs && data.jobs.jobids ? data.jobs.jobids.length : 0;
-            updateRunningBadge(runningCount);
+            // Update running badge (only counts our app's runs)
+            updateRunningBadge(data.active_count || 0);
 
             // Dispatch custom event for page-specific handlers
             window.dispatchEvent(new CustomEvent('rclone-stats', { detail: data }));
