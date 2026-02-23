@@ -115,10 +115,10 @@ def browse_dirs():
             remote = ""
 
         result = rclone.list_dirs(fs, remote)
+        # dirsOnly=True already filters to directories, so just extract names
         dirs = sorted(
-            item["Name"]
+            item.get("Name") or item.get("Path", "")
             for item in result.get("list", [])
-            if item.get("IsDir", False)
         )
         return jsonify({"dirs": dirs, "path": path})
     except Exception as e:
