@@ -139,3 +139,16 @@ Key design points:
 - A manual **Resume** button is available on failed/interrupted runs in the history pages (`POST /ops/resume/<run_id>`). Manual resume bypasses the `auto_resume` toggle check.
 - Move operations may not resume correctly due to partial file relocation — a warning is shown in the job form.
 - `_ensure_columns()` in `app/__init__.py` handles SQLite schema migration for existing databases (adds new columns via `ALTER TABLE` since `create_all()` won't add columns to existing tables).
+
+## Job-Level Order-By Option
+
+Jobs now support configurable `--order-by` composition from the Create/Edit Job form:
+
+- `Order By Field`: `size`, `name`, or `modtime`
+- `Order Direction`: `asc`, `desc`, or `mixed`
+- `Mixed Window (%)`: the third value used when direction is `mixed` (for example: `size,mixed,50`)
+
+Implementation details:
+- Stored on `Job` as `order_by_field`, `order_by_direction`, and `order_by_mixed_window`.
+- `Job.to_rclone_config()` builds `_config["OrderBy"]` so rclone receives the equivalent of `--order-by`.
+- Existing SQLite installs are updated at startup by `_ensure_columns()` adding the three new `job` columns if missing.

@@ -137,6 +137,11 @@ class JobRunner:
     def restore_active_runs(self):
         """On startup, restore tracking or resume interrupted runs."""
         running = RunHistory.query.filter_by(status="running").all()
+        if running:
+            logger.info(
+                "Found %d orphaned 'running' record(s) on startup", len(running)
+            )
+
         for run in running:
             # Re-read from DB to get fresh state (guard against concurrent
             # workers that may have already processed this run).
@@ -157,35 +162,45 @@ class JobRunner:
                     logger.info(
                         "Run #%d still alive in rclone, re-tracking", run.id
                     )
+                    continue
                 except Exception:
-                    # Job lost after restart
-                    run.finished_at = datetime.utcnow()
-                    run.error_message = "Lost track of job after restart"
+                    pass
 
-                    job = db.session.get(Job, run.job_id)
-                    if (
-                        job
-                        and job.auto_resume
-                        and run.retry_count < job.max_retries
-                    ):
-                        # Resume: mark interrupted and start a new run
-                        run.status = "interrupted"
-                        db.session.commit()
-                        new_run = self._resume_run(
-                            run, reason="startup_resume"
-                        )
-                        if new_run:
-                            logger.info(
-                                "Run #%d interrupted, resumed as Run #%d",
-                                run.id,
-                                new_run.id,
-                            )
-                    else:
-                        run.status = "failed"
-                        db.session.commit()
-                        logger.info(
-                            "Run #%d marked failed (no auto-resume)", run.id
-                        )
+            # Job lost after restart — mark failed or resume
+            run.finished_at = datetime.utcnow()
+            run.error_message = "Lost track of job after restart"
+
+            job = db.session.get(Job, run.job_id)
+            if (
+                job
+                and job.auto_resume
+                and run.retry_count < job.max_retries
+            ):
+                run.status = "interrupted"
+                db.session.commit()
+                new_run = self._resume_run(run, reason="startup_resume")
+                if new_run:
+                    logger.info(
+                        "Run #%d interrupted, resumed as Run #%d",
+                        run.id,
+                        new_run.id,
+                    )
+                else:
+                    logger.info(
+                        "Run #%d interrupted, resume skipped "
+                        "(duplicate or rclone error)",
+                        run.id,
+                    )
+            else:
+                run.status = "failed"
+                db.session.commit()
+                logger.info(
+                    "Run #%d marked failed (auto_resume=%s, retries=%d/%s)",
+                    run.id,
+                    getattr(job, "auto_resume", "N/A") if job else "no job",
+                    run.retry_count,
+                    getattr(job, "max_retries", "?") if job else "?",
+                )
 
     def _resume_run(self, old_run, reason="auto_retry"):
         """Mark old_run as interrupted and start a fresh run for the same job.
