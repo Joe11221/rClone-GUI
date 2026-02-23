@@ -93,3 +93,9 @@ class RcloneClient:
             "operations/list",
             {"fs": fs, "remote": remote, "opt": {"recurse": recurse}},
         )
+
+    def list_dirs(self, fs, remote=""):
+        return self._call(
+            "operations/list",
+            {"fs": fs, "remote": remote, "opt": {"recurse": False, "dirsOnly": True}},
+        )

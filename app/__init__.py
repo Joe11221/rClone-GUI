@@ -5,7 +5,6 @@ from app.extensions import db, migrate
 from app.rclone_client import RcloneClient
 from app.services.job_runner import JobRunner
 from app.services.scheduler_service import SchedulerService
-from app.services.stats_collector import StatsCollector
 
 
 def create_app(config_class=Config):
@@ -27,11 +26,6 @@ def create_app(config_class=Config):
     # Initialize job runner
     job_runner = JobRunner(rclone)
     app.config["JOB_RUNNER"] = job_runner
-
-    # Initialize stats collector (only tracks runs our app started)
-    collector = StatsCollector(rclone, job_runner, interval=2.0)
-    app.config["STATS_COLLECTOR"] = collector
-    collector.start()
 
     # Initialize scheduler
     scheduler_service = SchedulerService()
