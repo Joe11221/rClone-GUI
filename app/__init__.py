@@ -8,37 +8,27 @@ from app.services.scheduler_service import SchedulerService
 
 
 def _ensure_columns():
-    """Add new columns to existing SQLite tables (create_all won't do this)."""
-    from sqlalchemy import inspect, text
+    """Add new columns to existing SQLite tables (create_all won't do this).
 
-    insp = inspect(db.engine)
+    Each ALTER TABLE is tried individually and duplicate-column errors are
+    silently ignored.  This avoids race conditions when multiple gunicorn
+    workers run the migration concurrently.
+    """
+    from sqlalchemy import text
 
-    job_cols = {c["name"] for c in insp.get_columns("job")}
-    if "auto_resume" not in job_cols:
-        db.session.execute(
-            text("ALTER TABLE job ADD COLUMN auto_resume BOOLEAN DEFAULT 0")
-        )
-        db.session.execute(
-            text("ALTER TABLE job ADD COLUMN max_retries INTEGER DEFAULT 3")
-        )
-        db.session.execute(
-            text(
-                "ALTER TABLE job ADD COLUMN retry_delay_seconds INTEGER DEFAULT 60"
-            )
-        )
-        db.session.commit()
-
-    rh_cols = {c["name"] for c in insp.get_columns("run_history")}
-    if "retry_of_run_id" not in rh_cols:
-        db.session.execute(
-            text("ALTER TABLE run_history ADD COLUMN retry_of_run_id INTEGER")
-        )
-        db.session.execute(
-            text(
-                "ALTER TABLE run_history ADD COLUMN retry_count INTEGER DEFAULT 0"
-            )
-        )
-        db.session.commit()
+    migrations = [
+        "ALTER TABLE job ADD COLUMN auto_resume BOOLEAN DEFAULT 0",
+        "ALTER TABLE job ADD COLUMN max_retries INTEGER DEFAULT 3",
+        "ALTER TABLE job ADD COLUMN retry_delay_seconds INTEGER DEFAULT 60",
+        "ALTER TABLE run_history ADD COLUMN retry_of_run_id INTEGER",
+        "ALTER TABLE run_history ADD COLUMN retry_count INTEGER DEFAULT 0",
+    ]
+    for sql in migrations:
+        try:
+            db.session.execute(text(sql))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
 
 
 def create_app(config_class=Config):
