@@ -81,6 +81,7 @@ app/
 - **No auth.** The app is open on the home network. The code is structured with blueprints so Flask-Login can be added later — just add `@login_required` decorators.
 - **No CSRF protection on forms.** Would need Flask-WTF for production hardening.
 - **APScheduler's `_run_scheduled_job` needs `app.app_context()`.** It runs outside the request context, so DB queries require an explicit context push.
+- **Gunicorn must use `workers = 1`.** `_active_runs` is an in-memory dict, and the APScheduler monitor and `restore_active_runs()` run inside `create_app()`. With multiple workers each gets its own copy, causing duplicate job resumes and retry races against SQLite. Gevent handles concurrency via greenlets within a single process — multiple workers provide no benefit for this I/O-bound app.
 
 ## Deployment
 

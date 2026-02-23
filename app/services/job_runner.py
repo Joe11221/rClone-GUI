@@ -1,7 +1,10 @@
+import logging
 from datetime import datetime
 
 from app.extensions import db
 from app.models import Job, RunHistory
+
+logger = logging.getLogger(__name__)
 
 
 class JobRunner:
@@ -53,10 +56,44 @@ class JobRunner:
                 self.rclone.job_stop(run.rclone_jobid)
             except Exception:
                 pass
+
+        # Capture final stats before marking stopped
+        self._save_final_stats(run)
+
         run.status = "stopped"
         run.finished_at = datetime.utcnow()
         db.session.commit()
         self._active_runs.pop(run.id, None)
+
+    def _parse_rclone_time(self, time_str):
+        """Parse an rclone ISO8601 timestamp (e.g. '2025-01-01T12:00:00.123Z')
+        into a naive-UTC datetime, or None on failure."""
+        if not time_str:
+            return None
+        try:
+            # Python 3.11+ handles 'Z' directly; for 3.9/3.10 replace it
+            return datetime.fromisoformat(
+                time_str.replace("Z", "+00:00")
+            ).replace(tzinfo=None)
+        except (ValueError, TypeError):
+            return None
+
+    def _save_final_stats(self, run):
+        """Fetch per-group stats from rclone and persist them on the run."""
+        if not run.stats_group:
+            return
+        try:
+            stats = self.rclone.get_stats(group=run.stats_group)
+            run.bytes_transferred = stats.get("bytes", 0)
+            run.files_transferred = stats.get("transfers", 0)
+            run.errors = stats.get("errors", 0)
+        except Exception as exc:
+            logger.warning(
+                "Failed to fetch final stats for Run #%d (group=%s): %s",
+                run.id,
+                run.stats_group,
+                exc,
+            )
 
     def check_and_update_runs(self):
         for run_id, rclone_jobid in list(self._active_runs.items()):
@@ -71,20 +108,18 @@ class JobRunner:
                     del self._active_runs[run_id]
                     continue
 
-                run.finished_at = datetime.utcnow()
+                # Use rclone's actual end time for accuracy (falls back to now)
+                run.finished_at = (
+                    self._parse_rclone_time(status.get("endTime"))
+                    or datetime.utcnow()
+                )
+
                 success = status.get("success", False)
                 run.status = "completed" if success else "failed"
                 if status.get("error"):
                     run.error_message = str(status["error"])
 
-                # Grab final stats for this job's group
-                try:
-                    stats = self.rclone.get_stats(group=run.stats_group)
-                    run.bytes_transferred = stats.get("bytes", 0)
-                    run.files_transferred = stats.get("transfers", 0)
-                    run.errors = stats.get("errors", 0)
-                except Exception:
-                    pass
+                self._save_final_stats(run)
 
                 db.session.commit()
                 del self._active_runs[run_id]
@@ -103,11 +138,25 @@ class JobRunner:
         """On startup, restore tracking or resume interrupted runs."""
         running = RunHistory.query.filter_by(status="running").all()
         for run in running:
+            # Re-read from DB to get fresh state (guard against concurrent
+            # workers that may have already processed this run).
+            db.session.expire(run)
+            if run.status != "running":
+                logger.info(
+                    "Run #%d already handled (status=%s), skipping",
+                    run.id,
+                    run.status,
+                )
+                continue
+
             if run.rclone_jobid:
                 try:
                     self.rclone.job_status(run.rclone_jobid)
                     # Job still alive in rclone — re-track it
                     self._active_runs[run.id] = run.rclone_jobid
+                    logger.info(
+                        "Run #%d still alive in rclone, re-tracking", run.id
+                    )
                 except Exception:
                     # Job lost after restart
                     run.finished_at = datetime.utcnow()
@@ -122,13 +171,27 @@ class JobRunner:
                         # Resume: mark interrupted and start a new run
                         run.status = "interrupted"
                         db.session.commit()
-                        self._resume_run(run, reason="startup_resume")
+                        new_run = self._resume_run(
+                            run, reason="startup_resume"
+                        )
+                        if new_run:
+                            logger.info(
+                                "Run #%d interrupted, resumed as Run #%d",
+                                run.id,
+                                new_run.id,
+                            )
                     else:
                         run.status = "failed"
                         db.session.commit()
+                        logger.info(
+                            "Run #%d marked failed (no auto-resume)", run.id
+                        )
 
     def _resume_run(self, old_run, reason="auto_retry"):
-        """Mark old_run as interrupted and start a fresh run for the same job."""
+        """Mark old_run as interrupted and start a fresh run for the same job.
+
+        Returns the new RunHistory on success, or None if resume was skipped.
+        """
         job = db.session.get(Job, old_run.job_id)
         if not job:
             old_run.status = "failed"
@@ -141,16 +204,33 @@ class JobRunner:
             self._active_runs.pop(old_run.id, None)
             return None
 
-        if old_run.retry_count >= job.max_retries:
-            old_run.error_message = (
-                (old_run.error_message or "")
-                + f" [Max retries ({job.max_retries}) exhausted]"
+        # For non-manual resumes, enforce the auto_resume toggle and retry cap
+        if reason != "manual_resume":
+            if not job.auto_resume:
+                return None
+            if old_run.retry_count >= job.max_retries:
+                old_run.error_message = (
+                    (old_run.error_message or "")
+                    + f" [Max retries ({job.max_retries}) exhausted]"
+                )
+                db.session.commit()
+                return None
+
+        # Guard: check no run is already active in the DB for this job.
+        # This prevents duplicates when multiple workers or retries race.
+        existing = RunHistory.query.filter_by(
+            job_id=job.id, status="running"
+        ).first()
+        if existing and existing.id != old_run.id:
+            logger.info(
+                "Skipping resume for job '%s': Run #%d is already running",
+                job.name,
+                existing.id,
             )
-            db.session.commit()
             return None
 
         # Mark old run as interrupted (if not already)
-        if old_run.status != "interrupted":
+        if old_run.status not in ("interrupted", "stopped"):
             old_run.status = "interrupted"
             old_run.finished_at = old_run.finished_at or datetime.utcnow()
             db.session.commit()
@@ -188,12 +268,22 @@ class JobRunner:
             new_run.rclone_jobid = result["jobid"]
             db.session.commit()
             self._active_runs[new_run.id] = new_run.rclone_jobid
+            logger.info(
+                "Resumed job '%s' as Run #%d (retry #%d, reason=%s)",
+                job.name,
+                new_run.id,
+                new_run.retry_count,
+                reason,
+            )
             return new_run
         except Exception as e:
             new_run.status = "failed"
             new_run.finished_at = datetime.utcnow()
             new_run.error_message = f"Failed to start resume: {e}"
             db.session.commit()
+            logger.warning(
+                "Failed to resume job '%s': %s", job.name, e
+            )
             return None
 
     def _schedule_retry(self, failed_run, delay_seconds):
@@ -205,17 +295,16 @@ class JobRunner:
         run_id = failed_run.id
         self._pending_retries.add(run_id)
 
+        logger.info(
+            "Scheduling retry for Run #%d in %ds", run_id, delay_seconds
+        )
+
         def _do_retry():
             with app.app_context():
                 self._pending_retries.discard(run_id)
                 run = db.session.get(RunHistory, run_id)
                 if not run or run.status != "failed":
                     return  # status changed (e.g., user manually restarted)
-                # Check no other run for same job is already active
-                for active_run_id in self._active_runs:
-                    active_run = db.session.get(RunHistory, active_run_id)
-                    if active_run and active_run.job_id == run.job_id:
-                        return  # job already running
                 self._resume_run(run, reason="auto_retry")
 
         gevent.spawn_later(delay_seconds, _do_retry)
