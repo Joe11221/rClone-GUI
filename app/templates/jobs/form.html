@@ -119,6 +119,34 @@
                             </div>
                         </div>
                     </div>
+
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label for="order_by_field" class="form-label">Order By Field</label>
+                            <select class="form-select" id="order_by_field" name="order_by_field">
+                                <option value="size" {{ 'selected' if (job and job.order_by_field == 'size') or not job or not job.order_by_field }}>Size</option>
+                                <option value="name" {{ 'selected' if job and job.order_by_field == 'name' }}>Name</option>
+                                <option value="modtime" {{ 'selected' if job and job.order_by_field == 'modtime' }}>Modified Time</option>
+                            </select>
+                            <div class="form-text">First value in <code>--order-by</code>.</div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="order_by_direction" class="form-label">Order Direction</label>
+                            <select class="form-select" id="order_by_direction" name="order_by_direction">
+                                <option value="mixed" {{ 'selected' if (job and job.order_by_direction == 'mixed') or not job or not job.order_by_direction }}>Mixed</option>
+                                <option value="desc" {{ 'selected' if job and job.order_by_direction == 'desc' }}>Descending</option>
+                                <option value="asc" {{ 'selected' if job and job.order_by_direction == 'asc' }}>Ascending</option>
+                            </select>
+                            <div class="form-text">Second value in <code>--order-by</code>.</div>
+                        </div>
+                        <div class="col-md-4 mb-3" id="order-by-window-row"{% if job and job.order_by_direction and job.order_by_direction != 'mixed' %} style="display:none"{% endif %}>
+                            <label for="order_by_mixed_window" class="form-label">Mixed Window (%)</label>
+                            <input type="number" class="form-control" id="order_by_mixed_window" name="order_by_mixed_window"
+                                   value="{{ job.order_by_mixed_window if job and job.order_by_mixed_window is not none else 50 }}"
+                                   min="0" max="100">
+                            <div class="form-text">Third value for mixed mode, e.g. <code>size,mixed,50</code>.</div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -369,5 +397,14 @@ function selectCurrent() {
 document.getElementById('auto_resume').addEventListener('change', function() {
     document.getElementById('resume-options').style.display = this.checked ? '' : 'none';
 });
+
+function toggleOrderByMixedWindow() {
+    const direction = document.getElementById('order_by_direction').value;
+    const row = document.getElementById('order-by-window-row');
+    row.style.display = direction === 'mixed' ? '' : 'none';
+}
+
+document.getElementById('order_by_direction').addEventListener('change', toggleOrderByMixedWindow);
+toggleOrderByMixedWindow();
 </script>
 {% endblock %}

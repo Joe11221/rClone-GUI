@@ -18,6 +18,9 @@ class Job(db.Model):
     bwlimit = db.Column(db.String(50), default="")
     exclude_patterns = db.Column(db.Text, default="[]")
     retries = db.Column(db.Integer, default=3)
+    order_by_field = db.Column(db.String(20), default="size")
+    order_by_direction = db.Column(db.String(20), default="mixed")
+    order_by_mixed_window = db.Column(db.Integer, default=50)
     extra_flags = db.Column(db.Text, default="{}")
     auto_resume = db.Column(db.Boolean, default=False)
     max_retries = db.Column(db.Integer, default=3)
@@ -46,6 +49,19 @@ class Job(db.Model):
             "Checkers": self.checkers,
             "Retries": self.retries,
         }
+        if self.order_by_field:
+            order_by = self.order_by_field
+            direction = (self.order_by_direction or "").lower().strip()
+            if direction == "mixed":
+                try:
+                    mixed_window = int(self.order_by_mixed_window or 50)
+                except (TypeError, ValueError):
+                    mixed_window = 50
+                mixed_window = max(0, min(100, mixed_window))
+                order_by = f"{order_by},mixed,{mixed_window}"
+            elif direction in ("asc", "desc"):
+                order_by = f"{order_by},{direction}"
+            config["OrderBy"] = order_by
         if self.fast_list:
             config["FastList"] = True
         if self.bwlimit:

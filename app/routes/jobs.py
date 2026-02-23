@@ -17,6 +17,24 @@ from app.models import Job
 jobs_bp = Blueprint("jobs", __name__)
 
 
+def _parse_order_by(form):
+    field = form.get("order_by_field", "size").strip().lower()
+    if field not in {"size", "name", "modtime"}:
+        field = "size"
+
+    direction = form.get("order_by_direction", "mixed").strip().lower()
+    if direction not in {"asc", "desc", "mixed"}:
+        direction = "mixed"
+
+    try:
+        mixed_window = int(form.get("order_by_mixed_window", 50))
+    except (TypeError, ValueError):
+        mixed_window = 50
+    mixed_window = max(0, min(100, mixed_window))
+
+    return field, direction, mixed_window
+
+
 @jobs_bp.route("/")
 def list_jobs():
     jobs = Job.query.order_by(Job.created_at.desc()).all()
@@ -31,6 +49,9 @@ def create_job():
             for p in request.form.get("excludes", "").split("\n")
             if p.strip()
         ]
+        order_by_field, order_by_direction, order_by_mixed_window = (
+            _parse_order_by(request.form)
+        )
         job = Job(
             name=request.form["name"],
             source=request.form["source"],
@@ -42,6 +63,9 @@ def create_job():
             bwlimit=request.form.get("bwlimit", ""),
             exclude_patterns=json.dumps(excludes),
             retries=int(request.form.get("retries", 3)),
+            order_by_field=order_by_field,
+            order_by_direction=order_by_direction,
+            order_by_mixed_window=order_by_mixed_window,
             auto_resume="auto_resume" in request.form,
             max_retries=int(request.form.get("max_retries", 3)),
             retry_delay_seconds=int(
@@ -73,6 +97,9 @@ def edit_job(job_id):
             for p in request.form.get("excludes", "").split("\n")
             if p.strip()
         ]
+        order_by_field, order_by_direction, order_by_mixed_window = (
+            _parse_order_by(request.form)
+        )
         job.name = request.form["name"]
         job.source = request.form["source"]
         job.destination = request.form["destination"]
@@ -83,6 +110,9 @@ def edit_job(job_id):
         job.bwlimit = request.form.get("bwlimit", "")
         job.exclude_patterns = json.dumps(excludes)
         job.retries = int(request.form.get("retries", 3))
+        job.order_by_field = order_by_field
+        job.order_by_direction = order_by_direction
+        job.order_by_mixed_window = order_by_mixed_window
         job.auto_resume = "auto_resume" in request.form
         job.max_retries = int(request.form.get("max_retries", 3))
         job.retry_delay_seconds = int(
