@@ -134,6 +134,42 @@
                 </div>
             </div>
 
+            <div class="card bg-dark border-secondary mb-3">
+                <div class="card-header">Auto-Resume</div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input type="checkbox" class="form-check-input" id="auto_resume" name="auto_resume"
+                                   {{ 'checked' if job and job.auto_resume }}>
+                            <label class="form-check-label" for="auto_resume">
+                                Automatically retry failed or interrupted runs
+                            </label>
+                        </div>
+                        <div class="form-text">When enabled, failed runs will be retried automatically. Also resumes jobs interrupted by container restart.</div>
+                    </div>
+                    <div class="row" id="resume-options"{% if not (job and job.auto_resume) %} style="display:none"{% endif %}>
+                        <div class="col-md-6 mb-3">
+                            <label for="max_retries" class="form-label">Max Retries</label>
+                            <input type="number" class="form-control" id="max_retries" name="max_retries"
+                                   value="{{ job.max_retries if job else 3 }}" min="1" max="20">
+                            <div class="form-text">Maximum retry attempts per run chain</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="retry_delay_seconds" class="form-label">Retry Delay (seconds)</label>
+                            <input type="number" class="form-control" id="retry_delay_seconds" name="retry_delay_seconds"
+                                   value="{{ job.retry_delay_seconds if job else 60 }}" min="0" max="3600">
+                            <div class="form-text">Wait time before retrying. 0 = immediate.</div>
+                        </div>
+                    </div>
+                    {% if job and job.sync_type == 'move' %}
+                    <div class="alert alert-warning mb-0 py-2 small">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        Move operations may not resume correctly if files were partially moved.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
             <div class="d-flex justify-content-between">
                 <a href="{{ url_for('jobs.list_jobs') }}" class="btn btn-outline-secondary">Cancel</a>
                 <button type="submit" class="btn btn-success">
@@ -328,5 +364,10 @@ function selectCurrent() {
     document.getElementById(browseTarget).value = currentBrowsePath;
     bootstrap.Modal.getInstance(document.getElementById('browseModal')).hide();
 }
+
+// Auto-Resume toggle: show/hide retry options
+document.getElementById('auto_resume').addEventListener('change', function() {
+    document.getElementById('resume-options').style.display = this.checked ? '' : 'none';
+});
 </script>
 {% endblock %}

@@ -19,6 +19,9 @@ class Job(db.Model):
     exclude_patterns = db.Column(db.Text, default="[]")
     retries = db.Column(db.Integer, default=3)
     extra_flags = db.Column(db.Text, default="{}")
+    auto_resume = db.Column(db.Boolean, default=False)
+    max_retries = db.Column(db.Integer, default=3)
+    retry_delay_seconds = db.Column(db.Integer, default=60)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -84,3 +87,11 @@ class RunHistory(db.Model):
     errors = db.Column(db.Integer, default=0)
     error_message = db.Column(db.Text, nullable=True)
     triggered_by = db.Column(db.String(20), default="manual")
+    retry_of_run_id = db.Column(
+        db.Integer, db.ForeignKey("run_history.id"), nullable=True
+    )
+    retry_count = db.Column(db.Integer, default=0)
+
+    retry_of = db.relationship(
+        "RunHistory", remote_side="RunHistory.id", uselist=False
+    )

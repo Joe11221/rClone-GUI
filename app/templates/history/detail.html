@@ -6,9 +6,18 @@
     <div class="col-lg-8">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h4><i class="bi bi-journal-text"></i> Run #{{ run.id }}</h4>
-            <a href="{{ url_for('history.list_history') }}" class="btn btn-outline-secondary">
-                <i class="bi bi-arrow-left"></i> Back
-            </a>
+            <div class="d-flex gap-2">
+                {% if run.status in ['failed', 'interrupted'] and run.job %}
+                <form method="post" action="{{ url_for('ops.resume_run', run_id=run.id) }}">
+                    <button type="submit" class="btn btn-outline-primary">
+                        <i class="bi bi-arrow-clockwise"></i> Resume
+                    </button>
+                </form>
+                {% endif %}
+                <a href="{{ url_for('history.list_history') }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> Back
+                </a>
+            </div>
         </div>
 
         <div class="card bg-dark border-secondary mb-3">
@@ -31,6 +40,11 @@
                                         <span class="badge bg-danger">Failed</span>
                                     {% elif run.status == 'stopped' %}
                                         <span class="badge bg-warning text-dark">Stopped</span>
+                                    {% elif run.status == 'interrupted' %}
+                                        <span class="badge bg-info">Interrupted</span>
+                                    {% endif %}
+                                    {% if run.retry_count > 0 %}
+                                        <span class="badge bg-secondary ms-1">Retry #{{ run.retry_count }}</span>
                                     {% endif %}
                                 </td>
                             </tr>
@@ -42,6 +56,16 @@
                                 <td class="text-muted">rclone Job ID</td>
                                 <td>{{ run.rclone_jobid or '--' }}</td>
                             </tr>
+                            {% if run.retry_of_run_id %}
+                            <tr>
+                                <td class="text-muted">Retry Of</td>
+                                <td>
+                                    <a href="{{ url_for('history.detail', run_id=run.retry_of_run_id) }}">
+                                        Run #{{ run.retry_of_run_id }}
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endif %}
                         </table>
                     </div>
                     <div class="col-md-6">
