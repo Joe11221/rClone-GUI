@@ -147,6 +147,19 @@
                             <div class="form-text">Third value for mixed mode, e.g. <code>size,mixed,50</code>.</div>
                         </div>
                     </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="compare_method" class="form-label">File Comparison Method</label>
+                            <select class="form-select" id="compare_method" name="compare_method">
+                                <option value="default" {{ 'selected' if not job or not job.compare_method or job.compare_method == 'default' }}>Default (modtime + size)</option>
+                                <option value="size_only" {{ 'selected' if job and job.compare_method == 'size_only' }}>Size Only</option>
+                                <option value="checksum" {{ 'selected' if job and job.compare_method == 'checksum' }}>Checksum</option>
+                                <option value="ignore_existing" {{ 'selected' if job and job.compare_method == 'ignore_existing' }}>Ignore Existing</option>
+                            </select>
+                            <div class="form-text">How rclone decides whether a file needs to be transferred.</div>
+                        </div>
+                    </div>
                 </div>
             </div>
 

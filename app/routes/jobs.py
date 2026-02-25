@@ -35,6 +35,13 @@ def _parse_order_by(form):
     return field, direction, mixed_window
 
 
+def _parse_compare_method(form):
+    method = form.get("compare_method", "default").strip().lower()
+    if method not in {"default", "size_only", "checksum", "ignore_existing"}:
+        method = "default"
+    return method
+
+
 @jobs_bp.route("/")
 def list_jobs():
     jobs = Job.query.order_by(Job.created_at.desc()).all()
@@ -66,6 +73,7 @@ def create_job():
             order_by_field=order_by_field,
             order_by_direction=order_by_direction,
             order_by_mixed_window=order_by_mixed_window,
+            compare_method=_parse_compare_method(request.form),
             auto_resume="auto_resume" in request.form,
             max_retries=int(request.form.get("max_retries", 3)),
             retry_delay_seconds=int(
@@ -113,6 +121,7 @@ def edit_job(job_id):
         job.order_by_field = order_by_field
         job.order_by_direction = order_by_direction
         job.order_by_mixed_window = order_by_mixed_window
+        job.compare_method = _parse_compare_method(request.form)
         job.auto_resume = "auto_resume" in request.form
         job.max_retries = int(request.form.get("max_retries", 3))
         job.retry_delay_seconds = int(
