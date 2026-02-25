@@ -152,3 +152,18 @@ Implementation details:
 - Stored on `Job` as `order_by_field`, `order_by_direction`, and `order_by_mixed_window`.
 - `Job.to_rclone_config()` builds `_config["OrderBy"]` so rclone receives the equivalent of `--order-by`.
 - Existing SQLite installs are updated at startup by `_ensure_columns()` adding the three new `job` columns if missing.
+
+## Job-Level File Comparison Method
+
+Each job has a configurable file comparison method that controls how rclone decides whether a file needs to be transferred:
+
+- **Default** (modtime + size): rclone's built-in behavior — no extra config key
+- **Size Only** (`--size-only`): only compare file sizes, ignore modification time
+- **Checksum** (`--checksum`): compare file hashes instead of modtime
+- **Ignore Existing** (`--ignore-existing`): skip any file that already exists on the destination
+
+Implementation details:
+- Stored on `Job` as `compare_method` (VARCHAR(20), default `"default"`). Valid values: `default`, `size_only`, `checksum`, `ignore_existing`.
+- `Job.to_rclone_config()` maps the value to the corresponding rclone RC API config key (`SizeOnly`, `CheckSum`, or `IgnoreExisting`).
+- Route validation in `_parse_compare_method()` rejects unknown values, falling back to `"default"`.
+- Existing SQLite installs get the column via `_ensure_columns()` at startup.

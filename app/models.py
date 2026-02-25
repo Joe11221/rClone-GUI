@@ -21,6 +21,7 @@ class Job(db.Model):
     order_by_field = db.Column(db.String(20), default="size")
     order_by_direction = db.Column(db.String(20), default="mixed")
     order_by_mixed_window = db.Column(db.Integer, default=50)
+    compare_method = db.Column(db.String(20), default="default")
     extra_flags = db.Column(db.Text, default="{}")
     auto_resume = db.Column(db.Boolean, default=False)
     max_retries = db.Column(db.Integer, default=3)
@@ -66,6 +67,12 @@ class Job(db.Model):
             config["FastList"] = True
         if self.bwlimit:
             config["BwLimit"] = self.bwlimit
+        if self.compare_method == "size_only":
+            config["SizeOnly"] = True
+        elif self.compare_method == "checksum":
+            config["CheckSum"] = True
+        elif self.compare_method == "ignore_existing":
+            config["IgnoreExisting"] = True
         config.update(self.get_extra_flags())
         return config
 
