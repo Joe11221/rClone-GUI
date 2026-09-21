@@ -77,7 +77,7 @@ app/
 - **`stats_collector.py` exists but is unused.** SSE polling is done inline in `sse.py`. The old StatsCollector used stdlib threads that conflicted with gevent. Don't re-introduce it.
 - **`exclude_patterns` and `extra_flags` are JSON strings in SQLite.** Use `job.get_excludes()` and `job.get_extra_flags()` to deserialize.
 - **RunHistory doesn't snapshot job config.** The detail page shows the *current* job config, not config at time of execution.
-- **Docker mounts the data drive read-only** (`/mnt/storage:ro`). Move operations to local destinations will fail unless the user changes this in `docker-compose.yml`.
+- **Docker mounts the data path read-write** (`${DATA_PATH}:/mnt/:rw`). Move operations to local destinations work as long as the destination is under the mounted path.
 - **No auth.** The app is open on the home network. The code is structured with blueprints so Flask-Login can be added later — just add `@login_required` decorators.
 - **No CSRF protection on forms.** Would need Flask-WTF for production hardening.
 - **APScheduler's `_run_scheduled_job` needs `app.app_context()`.** It runs outside the request context, so DB queries require an explicit context push.
