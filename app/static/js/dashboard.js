@@ -75,19 +75,26 @@ window.addEventListener('rclone-stats', function(e) {
 
         // Update per-run stats columns (operations/running page)
         const bytesCol = item.querySelector('.transfer-bytes');
+        const remainingCol = item.querySelector('.transfer-remaining');
         const filesCol = item.querySelector('.transfer-files');
         const checksCol = item.querySelector('.transfer-checks');
         const errorsCol = item.querySelector('.transfer-errors');
         const etaCol = item.querySelector('.transfer-eta');
 
+        // Calculate overall progress from totalBytes (much more stable than per-file average)
+        const totalBytes = stats.totalBytes || 0;
+
         if (bytesCol) bytesCol.textContent = formatBytes(displayBytes);
+        if (remainingCol) {
+            remainingCol.textContent = totalBytes > 0
+                ? formatBytes(Math.max(0, totalBytes - displayBytes))
+                : '--';
+        }
         if (filesCol) filesCol.textContent = displayTransfers;
         if (checksCol) checksCol.textContent = displayChecks;
         if (errorsCol) errorsCol.textContent = errors;
         if (etaCol) etaCol.textContent = formatETA(stats.eta);
 
-        // Calculate overall progress from totalBytes (much more stable than per-file average)
-        const totalBytes = stats.totalBytes || 0;
         if (totalBytes > 0) {
             const overallPct = Math.min(100, Math.round((bytes / totalBytes) * 100));
             if (overallPct > (prev.pct || 0)) prev.pct = overallPct;

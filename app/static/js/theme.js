@@ -6,7 +6,9 @@ const THEMES = {
     dracula:  { label: 'Dracula',  mode: 'dark',  bg: '#1e1f29', accent: '#bd93f9' },
     forest:   { label: 'Forest',   mode: 'dark',  bg: '#0f1a16', accent: '#34d399' },
     glass:    { label: 'Liquid Glass', mode: 'dark',  bg: '#4f46e5', accent: '#7dd3fc' },
+    'soft-glass':  { label: 'Soft Glass',   mode: 'dark',  bg: '#0a0d1f', accent: '#7dd3fc' },
     frost:    { label: 'Frost',        mode: 'light', bg: '#bfdbfe', accent: '#3b82f6' },
+    'soft-frost': { label: 'Soft Frost', mode: 'light', bg: '#eef2fa', accent: '#3b82f6' },
     paper:    { label: 'Paper',    mode: 'light', bg: '#ffffff', accent: '#4f46e5' },
 };
 const DEFAULT_THEME = 'graphite';
