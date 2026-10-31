@@ -48,9 +48,16 @@ to rclone; every operation goes through the **rclone RC HTTP API**.
 - **Directory browser** — the Browse button on the job form opens a modal
   that walks local paths and remotes via `operations/list`.
 - **Schedules** — per-job cron schedules (APScheduler), enable/disable,
-  interpreted in your configured `TIMEZONE`.
+  interpreted in your configured `TIMEZONE`. A run that comes due while the
+  server is down starts if it's less than an hour late (Docker); the Windows
+  app instead starts one catch-up run for everything missed.
 - **Live dashboard** — SSE-driven progress bars, speed, bytes, file counts
   (new vs unchanged), and ETA.
+- **Failures** — per-file errors from rclone are saved while a run is still
+  going, not just the error count. The Running page shows a live feed of the
+  newest failures; the run's history page lists them all, grouped by cause,
+  with a filter (by file or message), paging, and a CSV export. Up to 50,000
+  failures are kept per run.
 - **History** — every run is recorded with final stats and status
   (`completed`/`failed`/`stopped`/`interrupted`).
 - **Auto-resume** — per-job toggle. Orphaned `running` records are
@@ -59,6 +66,9 @@ to rclone; every operation goes through the **rclone RC HTTP API**.
   `retry_of_run_id`. User-stopped runs are never auto-resumed. A manual
   Resume button is available on failed/interrupted runs.
 - **Settings** — configured remotes list and a global bandwidth limit.
+- **Themes** — eight colour themes (dark and light) from the **Theme** menu in
+  the navigation bar. The choice is stored in your browser, so each browser
+  picks its own.
 
 ## Why size + mixed ordering?
 
@@ -208,8 +218,8 @@ Key design rules:
    with `_async=true` and `_group=job_{run_id}`
 3. The SSE endpoint polls `core/stats?group=job_{run_id}` (every 2s while
    active, 5s when idle)
-4. A 10-second monitor finalizes completed runs and writes final stats to the
-   DB
+4. A 10-second monitor copies new per-file failures into the DB while a run is
+   active, then finalizes completed runs and writes their final stats
 5. Auto-resume (if enabled) re-dispatches orphaned/failed runs
 
 ### Project structure
@@ -226,18 +236,24 @@ app/
 │   ├── operations.py     # Start/stop/resume/status of running syncs
 │   ├── schedules.py      # Cron schedule CRUD + enable/disable
 │   ├── history.py        # Past run list + detail view
+│   ├── run_errors.py     # Per-run failure list (JSON, paged), summary, CSV export
 │   ├── sse.py            # SSE endpoint — polls rclone directly (no bg thread)
 │   └── settings.py       # Remotes list, global bandwidth limit
 ├── services/
 │   ├── job_runner.py     # Core orchestration: start/stop jobs, finalize runs
+│   ├── run_errors.py     # Turns rclone transfer errors into stored, grouped failures
 │   └── scheduler_service.py  # APScheduler cron triggers
-├── templates/            # Jinja2, Bootstrap 5 dark theme
-└── static/               # CSS + vanilla JS (SSE client, live stats)
+├── security.py           # Cross-site POST and ALLOWED_HOSTS checks
+├── templates/            # Jinja2, Bootstrap 5 (themed via data-theme)
+└── static/               # CSS, vendored Bootstrap, vanilla JS (SSE, errors, themes)
+desktop/                  # Windows app: WebView2 window, tray icon, rclone supervisor
+packaging/                # PyInstaller spec, Inno Setup script, build.ps1
 tests/                    # pytest suite (no rclone needed)
 ```
 
 Tech stack: Flask 3.1, SQLAlchemy (SQLite), APScheduler 3.10, Gunicorn +
-gevent, Bootstrap 5 (CDN) and vanilla JS (no build tools).
+gevent, Bootstrap 5 (vendored, no CDN) and vanilla JS (no build tools). The
+Windows app adds pywebview, pystray, Pillow and PyInstaller.
 
 ## Security notes
 
