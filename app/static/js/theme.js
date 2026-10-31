@@ -9,6 +9,7 @@ const THEMES = {
     'soft-glass':  { label: 'Soft Glass',   mode: 'dark',  bg: '#0a0d1f', accent: '#7dd3fc' },
     frost:    { label: 'Frost',        mode: 'light', bg: '#bfdbfe', accent: '#3b82f6' },
     'soft-frost': { label: 'Soft Frost', mode: 'light', bg: '#eef2fa', accent: '#3b82f6' },
+    'dark-frost': { label: 'Dark Frost', mode: 'dark',  bg: '#141a2a', accent: '#60a5fa' },
     paper:    { label: 'Paper',    mode: 'light', bg: '#ffffff', accent: '#4f46e5' },
 };
 const DEFAULT_THEME = 'graphite';
