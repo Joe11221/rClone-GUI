@@ -120,3 +120,48 @@ class RunHistory(db.Model):
     retry_of = db.relationship(
         "RunHistory", remote_side="RunHistory.id", uselist=False
     )
+    # (``errors`` is already the int count of failures rclone reported.)
+    error_log = db.relationship(
+        "RunError", backref="run", lazy="dynamic", cascade="all,delete-orphan"
+    )
+
+
+class RunError(db.Model):
+    """One failed transfer or check captured while a run was in progress.
+
+    rclone's RC API only keeps the most recent ~100 completed transfers, so the
+    runner copies failures here as they happen. Runs can fail thousands of
+    files, hence the indexes for grouping and cursor paging.
+    """
+
+    __table_args__ = (
+        db.UniqueConstraint("run_id", "fingerprint", name="uq_run_error"),
+        db.Index("ix_run_error_run_category", "run_id", "category"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    run_id = db.Column(
+        db.Integer, db.ForeignKey("run_history.id"), nullable=False, index=True
+    )
+    occurred_at = db.Column(db.DateTime, default=datetime.utcnow)
+    path = db.Column(db.String(1000), nullable=True)
+    kind = db.Column(db.String(10), default="transfer")  # transfer | check
+    size = db.Column(db.BigInteger, nullable=True)
+    message = db.Column(db.Text, nullable=False)
+    # ``message`` with ids/urls/quoted names stripped, so thousands of failures
+    # with the same cause collapse into one group.
+    category = db.Column(db.String(200), nullable=False)
+    fingerprint = db.Column(db.String(40), nullable=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "occurred_at": (
+                self.occurred_at.isoformat() + "Z" if self.occurred_at else None
+            ),
+            "path": self.path,
+            "kind": self.kind,
+            "size": self.size,
+            "message": self.message,
+            "category": self.category,
+        }

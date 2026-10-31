@@ -3,6 +3,7 @@ from datetime import datetime
 
 from app.extensions import db
 from app.models import Job, RunHistory
+from app.services.run_errors import record_failures
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,7 @@ class JobRunner:
                 pass
 
         # Capture final stats before marking stopped
+        self.collect_errors(run)
         self._save_final_stats(run)
 
         run.status = "stopped"
@@ -93,12 +95,13 @@ class JobRunner:
     def _save_final_stats(self, run):
         """Fetch per-group stats from rclone and persist them on the run."""
         if not run.stats_group:
-            return
+            return None
         try:
             stats = self.rclone.get_stats(group=run.stats_group)
             run.bytes_transferred = stats.get("bytes", 0)
             run.files_transferred = stats.get("transfers", 0)
             run.errors = stats.get("errors", 0)
+            return stats
         except Exception as exc:
             logger.warning(
                 "Failed to fetch final stats for Run #%d (group=%s): %s",
@@ -106,6 +109,31 @@ class JobRunner:
                 run.stats_group,
                 exc,
             )
+        return None
+
+    def collect_errors(self, run):
+        """Copy failed transfers/checks of a run out of rclone into the DB."""
+        if not run.stats_group:
+            return 0
+        try:
+            reply = self.rclone.get_transferred(group=run.stats_group)
+            return record_failures(run, (reply or {}).get("transferred"))
+        except Exception as exc:
+            db.session.rollback()
+            logger.warning(
+                "Failed to collect errors for Run #%d (group=%s): %s",
+                run.id,
+                run.stats_group,
+                exc,
+            )
+            return 0
+
+    def collect_active_errors(self):
+        """Poll every tracked run; called often since rclone forgets old entries."""
+        for run_id in list(self._active_runs):
+            run = db.session.get(RunHistory, run_id)
+            if run:
+                self.collect_errors(run)
 
     def check_and_update_runs(self):
         for run_id, rclone_jobid in list(self._active_runs.items()):
@@ -131,7 +159,18 @@ class JobRunner:
                 if status.get("error"):
                     run.error_message = str(status["error"])
 
-                self._save_final_stats(run)
+                self.collect_errors(run)
+                stats = self._save_final_stats(run)
+                # Failures not tied to a file (listing, deleting, ...) only show
+                # up as rclone's last error; keep it if nothing else explains
+                # the failure.
+                if (
+                    not success
+                    and not run.error_message
+                    and stats
+                    and stats.get("lastError")
+                ):
+                    run.error_message = str(stats["lastError"])
 
                 db.session.commit()
                 del self._active_runs[run_id]

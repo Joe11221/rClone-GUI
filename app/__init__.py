@@ -111,7 +111,16 @@ def create_app(config_class=Config):
         with app.app_context():
             job_runner.check_and_update_runs()
 
+    def _collect_errors():
+        with app.app_context():
+            job_runner.collect_active_errors()
+
     monitor.add_job(_check_runs, "interval", seconds=10)
+    # rclone only remembers its last ~100 completed transfers, so failures
+    # must be picked up quickly. Overlap is harmless: entries are de-duplicated.
+    monitor.add_job(
+        _collect_errors, "interval", seconds=3, max_instances=1, coalesce=True
+    )
     if app.config["BACKGROUND_TASKS_ENABLED"]:
         monitor.start()
 
@@ -119,6 +128,7 @@ def create_app(config_class=Config):
     from app.routes.history import history_bp
     from app.routes.jobs import jobs_bp
     from app.routes.operations import ops_bp
+    from app.routes.run_errors import run_errors_bp
     from app.routes.schedules import schedules_bp
     from app.routes.settings import settings_bp
     from app.routes.sse import sse_bp
@@ -127,6 +137,7 @@ def create_app(config_class=Config):
     app.register_blueprint(ops_bp, url_prefix="/ops")
     app.register_blueprint(schedules_bp, url_prefix="/schedules")
     app.register_blueprint(history_bp, url_prefix="/history")
+    app.register_blueprint(run_errors_bp, url_prefix="/runs")
     app.register_blueprint(sse_bp)
     app.register_blueprint(settings_bp, url_prefix="/settings")
 

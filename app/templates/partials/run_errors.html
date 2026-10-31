@@ -1,0 +1,40 @@
+{# Failure list for a run, driven by static/js/errors.js.
+   live=True: hidden Running-page feed that shows the newest failures as they happen.
+   live=False: full browser (paging, filter, export) for a run's detail page. #}
+{% macro run_errors(run, live=False) %}
+<div class="run-errors{{ ' d-none' if live }}" id="{{ 'failures' if not live else 'failures-' ~ run.id }}"
+     data-run-id="{{ run.id }}" data-live="{{ 1 if live else 0 }}"
+     data-max-rows="{{ 200 if live else 0 }}" data-page-size="{{ 50 if live else 100 }}">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+        <h6 class="mb-0 text-danger">
+            <i class="bi bi-exclamation-triangle"></i> Failures
+            <span class="badge bg-danger re-total">0</span>
+        </h6>
+        <div class="d-flex gap-2">
+            <input type="search" class="form-control form-control-sm re-search"
+                   placeholder="Filter by file or message" aria-label="Filter failures">
+            <a class="btn btn-sm btn-outline-secondary re-csv text-nowrap"
+               href="{{ url_for('run_errors.export_errors', run_id=run.id) }}">
+                <i class="bi bi-download"></i> CSV
+            </a>
+            {% if live %}
+            <a class="btn btn-sm btn-outline-secondary text-nowrap"
+               href="{{ url_for('history.detail', run_id=run.id) }}#failures">
+                View all
+            </a>
+            {% endif %}
+        </div>
+    </div>
+    <div class="small text-danger mb-2 d-none re-latest"></div>
+    <div class="re-categories mb-2"></div>
+    <div class="re-scroll">
+        <table class="table table-sm table-borderless mb-0 re-table">
+            <tbody class="re-rows"></tbody>
+        </table>
+    </div>
+    <div class="d-flex justify-content-between align-items-center mt-2">
+        <small class="text-muted re-status"></small>
+        <button type="button" class="btn btn-sm btn-outline-secondary re-more d-none">Load older</button>
+    </div>
+</div>
+{% endmacro %}
