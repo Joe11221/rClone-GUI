@@ -3,8 +3,10 @@ from apscheduler.triggers.cron import CronTrigger
 
 
 class SchedulerService:
-    def __init__(self):
-        self.scheduler = BackgroundScheduler()
+    def __init__(self, timezone=None):
+        # Cron expressions are interpreted in this timezone (None = server local).
+        self.timezone = timezone
+        self.scheduler = BackgroundScheduler(timezone=timezone)
         self.job_runner = None
         self.app = None
 
@@ -26,7 +28,9 @@ class SchedulerService:
 
     def add_schedule(self, schedule):
         job_id = f"schedule_{schedule.id}"
-        trigger = CronTrigger.from_crontab(schedule.cron_expression)
+        trigger = CronTrigger.from_crontab(
+            schedule.cron_expression, timezone=self.timezone
+        )
         self.scheduler.add_job(
             func=self._run_scheduled_job,
             trigger=trigger,

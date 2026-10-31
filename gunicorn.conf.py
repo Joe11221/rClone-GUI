@@ -1,3 +1,5 @@
+# Listens on all interfaces *inside the container* so Docker can forward to it.
+# What the host exposes is controlled by BIND_ADDRESS in docker-compose.yml.
 bind = "0.0.0.0:8080"
 # Single worker: gevent handles concurrency via greenlets (not processes).
 # Multiple workers would duplicate the in-memory _active_runs dict,

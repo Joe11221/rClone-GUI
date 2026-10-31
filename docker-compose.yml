@@ -2,15 +2,18 @@ services:
   rclone-gui:
     build: .
     ports:
-      - "${PORT:-8080}:8080"
+      # Published on loopback by default because the app has NO authentication.
+      # Set BIND_ADDRESS=0.0.0.0 in .env only on a network you trust.
+      - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-8080}:8080"
     volumes:
       # Persist SQLite database
       - ./data:/app/instance
-      # Mount your rclone config (remotes like pcloud are configured here)
+      # Mount your rclone config (remotes are defined here)
       - ${RCLONE_CONFIG:-~/.config/rclone}:/root/.config/rclone
-      # Mount your data drive (adjust path to your 6TB HDD)
+      # Mount the data you want to back up or restore (read-write!)
       - ${DATA_PATH:-/mnt/storage}:/mnt/:rw
     environment:
-      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+      - SECRET_KEY=${SECRET_KEY:?Set SECRET_KEY in .env (see .env.example)}
+      - TIMEZONE=${TIMEZONE:-UTC}
       - RCLONE_RC_URL=http://127.0.0.1:5572
     restart: unless-stopped

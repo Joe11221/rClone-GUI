@@ -1,21 +1,51 @@
 from datetime import timezone
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import Flask
 
 from app.config import Config
-from app.extensions import db, migrate
+from app.extensions import db
 from app.rclone_client import RcloneClient
 from app.services.job_runner import JobRunner
 from app.services.scheduler_service import SchedulerService
 
 
+# Values that must never be used to sign sessions (placeholders that ship in
+# example files or older versions of this project).
+_INSECURE_SECRET_KEYS = {
+    "",
+    "change-me",
+    "change-me-in-production",
+    "dev-secret-key-change-me",
+}
+
+
+def _require_secret_key(app):
+    if app.config.get("SECRET_KEY") in _INSECURE_SECRET_KEYS:
+        raise RuntimeError(
+            "SECRET_KEY is not set (or is a placeholder). Generate one with "
+            "`python -c \"import secrets; print(secrets.token_hex(32))\"` "
+            "and set it in your .env file."
+        )
+
+
+def _load_timezone(name):
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        raise RuntimeError(
+            f"Invalid TIMEZONE {name!r}; use an IANA name such as "
+            "'UTC' or 'America/New_York'."
+        ) from exc
+
+
 def _ensure_columns():
     """Add new columns to existing SQLite tables (create_all won't do this).
 
-    Each ALTER TABLE is tried individually and duplicate-column errors are
-    silently ignored.  This avoids race conditions when multiple gunicorn
-    workers run the migration concurrently.
+    This is the app's only schema migration mechanism: ``db.create_all()``
+    creates missing tables and each ALTER TABLE below adds a column that older
+    databases lack. Statements are tried individually and duplicate-column
+    errors are ignored, so it is safe to run on every startup.
     """
     from sqlalchemy import text
 
@@ -41,10 +71,11 @@ def _ensure_columns():
 def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
+    _require_secret_key(app)
+    tz = _load_timezone(app.config["TIMEZONE"])
 
     # Initialize extensions
     db.init_app(app)
-    migrate.init_app(app, db)
 
     # Initialize rclone client
     rclone = RcloneClient(
@@ -59,21 +90,22 @@ def create_app(config_class=Config):
     app.config["JOB_RUNNER"] = job_runner
 
     # Initialize scheduler
-    scheduler_service = SchedulerService()
+    scheduler_service = SchedulerService(timezone=tz)
     scheduler_service.init_app(app, job_runner)
     app.config["SCHEDULER_SERVICE"] = scheduler_service
 
     # Periodic task to finalize completed runs
     from apscheduler.schedulers.background import BackgroundScheduler
 
-    monitor = BackgroundScheduler()
+    monitor = BackgroundScheduler(timezone=tz)
 
     def _check_runs():
         with app.app_context():
             job_runner.check_and_update_runs()
 
     monitor.add_job(_check_runs, "interval", seconds=10)
-    monitor.start()
+    if app.config["BACKGROUND_TASKS_ENABLED"]:
+        monitor.start()
 
     # Register blueprints
     from app.routes.history import history_bp
@@ -91,8 +123,6 @@ def create_app(config_class=Config):
     app.register_blueprint(settings_bp, url_prefix="/settings")
 
     # --- Jinja2 template filters ---
-
-    tz = ZoneInfo(app.config.get("TIMEZONE", "America/New_York"))
 
     @app.template_filter("local_time")
     def local_time_filter(dt, fmt="%Y-%m-%d %H:%M"):
@@ -161,11 +191,12 @@ def create_app(config_class=Config):
             rclone_connected=rclone_connected,
         )
 
-    # Create tables and start scheduler on first request
+    # Create tables, add any missing columns, and start the scheduler
     with app.app_context():
         db.create_all()
         _ensure_columns()
         job_runner.restore_active_runs()
-        scheduler_service.start()
+        if app.config["BACKGROUND_TASKS_ENABLED"]:
+            scheduler_service.start()
 
     return app

@@ -123,9 +123,16 @@ window.addEventListener('rclone-stats', function(e) {
                     const div = document.createElement('div');
                     div.className = 'file-item d-flex justify-content-between';
                     const pct = t.percentage || 0;
-                    div.innerHTML =
-                        '<span class="text-truncate me-2" style="max-width: 70%;">' + t.name + '</span>' +
-                        '<span class="text-nowrap">' + pct + '% ' + formatSpeed(t.speed) + '</span>';
+                    // File names come from the filesystem and are untrusted:
+                    // always use textContent, never innerHTML.
+                    const nameSpan = document.createElement('span');
+                    nameSpan.className = 'text-truncate me-2';
+                    nameSpan.style.maxWidth = '70%';
+                    nameSpan.textContent = t.name;
+                    const statSpan = document.createElement('span');
+                    statSpan.className = 'text-nowrap';
+                    statSpan.textContent = pct + '% ' + formatSpeed(t.speed);
+                    div.append(nameSpan, statSpan);
                     fileList.appendChild(div);
                 });
             }
