@@ -1,9 +1,10 @@
 # rClone GUI
 
 > [!CAUTION]
-> **This app has no authentication and no CSRF protection.** Anyone who can
-> reach its port can browse the mounted filesystem, create jobs, and run
-> `sync`/`move` operations against your data (which is mounted **read-write**).
+> **This app has no authentication.** Anyone who can reach its port can browse
+> the mounted filesystem, create jobs, and run `sync`/`move` operations against
+> your data (which is mounted **read-write**). Cross-site requests from other
+> websites are rejected, but that doesn't protect against direct access.
 >
 > - By default the port is published on `127.0.0.1` only.
 > - Only set `BIND_ADDRESS=0.0.0.0` on a network you fully trust.
@@ -11,9 +12,10 @@
 >   behind a VPN (WireGuard, Tailscale) or a reverse proxy that enforces
 >   authentication.
 
-A Flask web GUI for managing [rclone](https://rclone.org) backup jobs on a home
-server. Create sync/copy/move jobs, schedule them with cron, watch live
-transfer progress, and browse run history — all from a browser.
+A Flask web GUI for managing [rclone](https://rclone.org) backup jobs, on a home
+server with Docker or on a Windows PC as a [tray app](#windows-app). Create sync/copy/move jobs, schedule them with cron, watch live
+transfer progress, and browse run history — from a browser, or from the Windows
+app's own window.
 
 This is a standalone app (not the upstream rclone web GUI). It never shells out
 to rclone; every operation goes through the **rclone RC HTTP API**.
@@ -84,7 +86,34 @@ split is across transfer workers, it works best with several parallel
 transfers, and rclone's own docs note that ordering is more accurate with a
 larger `--max-backlog`.
 
-## Quickstart
+## Windows app
+
+A regular Windows program with its own window. It runs without Docker or Python
+and includes rclone. Closing the window leaves it in the system tray so scheduled
+syncs keep running; choose **Quit** from the tray icon's menu to exit.
+
+1. Download `rClone-GUI-Setup.exe` from the
+   [releases page](https://github.com/Joe11221/rClone-GUI/releases). No admin
+   rights are needed. The installer is unsigned, so SmartScreen warns on first
+   run: choose **More info**, then **Run anyway**.
+2. Leave **Start rClone GUI when I log in** ticked if you want schedules to keep
+   running.
+3. Right-click the tray icon and choose **Configure remotes…** to add cloud
+   remotes. Existing rclone remotes are picked up automatically.
+
+If the PC was asleep or off when a schedule came due, the run starts once when
+the app is next running, however many were missed. The PC stays awake during a
+transfer, but the app can't wake a sleeping PC, and schedules only run while you
+are logged in. Don't use it on a PC shared with people you don't trust: the web
+UI has no login, and other accounts on the PC can reach it.
+
+Data is kept in `%LOCALAPPDATA%\rClone GUI` and is left in place on uninstall.
+Password-encrypted rclone configs aren't supported yet.
+
+See [docs/standalone-windows.md](docs/standalone-windows.md) for the design and
+build steps.
+
+## Quickstart (Docker)
 
 Requires Docker with the Compose plugin, and an existing rclone config
 (`rclone config`) if you want to use cloud remotes.
@@ -112,6 +141,7 @@ values are rejected.
 | `TIMEZONE` | `UTC` | IANA timezone (e.g. `America/New_York`) used to display times **and** to interpret cron schedules |
 | `RCLONE_CONFIG` | `~/.config/rclone` | Host path to the rclone config directory (remotes are defined here) |
 | `DATA_PATH` | `/mnt/storage` | Host data path, mounted at `/mnt/` inside the container |
+| `ALLOWED_HOSTS` | any | Comma-separated `host:port` values the app answers to, e.g. `nas.lan:9020`. Setting it blocks DNS rebinding attacks |
 
 Example for a home server you want to reach from other machines on your LAN:
 

@@ -6,6 +6,7 @@ from flask import Flask
 from app.config import Config
 from app.extensions import db
 from app.rclone_client import RcloneClient
+from app.security import init_request_guards
 from app.services.job_runner import JobRunner
 from app.services.scheduler_service import SchedulerService
 
@@ -59,6 +60,7 @@ def _ensure_columns():
         "ALTER TABLE job ADD COLUMN compare_method VARCHAR(20) DEFAULT 'default'",
         "ALTER TABLE run_history ADD COLUMN retry_of_run_id INTEGER",
         "ALTER TABLE run_history ADD COLUMN retry_count INTEGER DEFAULT 0",
+        "ALTER TABLE schedule ADD COLUMN catch_up_after DATETIME",
     ]
     for sql in migrations:
         try:
@@ -73,6 +75,8 @@ def create_app(config_class=Config):
     app.config.from_object(config_class)
     _require_secret_key(app)
     tz = _load_timezone(app.config["TIMEZONE"])
+
+    init_request_guards(app)
 
     # Initialize extensions
     db.init_app(app)
@@ -90,7 +94,11 @@ def create_app(config_class=Config):
     app.config["JOB_RUNNER"] = job_runner
 
     # Initialize scheduler
-    scheduler_service = SchedulerService(timezone=tz)
+    scheduler_service = SchedulerService(
+        timezone=tz,
+        misfire_grace_seconds=app.config["SCHEDULE_MISFIRE_GRACE_SECONDS"],
+        catch_up=app.config["SCHEDULE_CATCH_UP"],
+    )
     scheduler_service.init_app(app, job_runner)
     app.config["SCHEDULER_SERVICE"] = scheduler_service
 
@@ -121,6 +129,10 @@ def create_app(config_class=Config):
     app.register_blueprint(history_bp, url_prefix="/history")
     app.register_blueprint(sse_bp)
     app.register_blueprint(settings_bp, url_prefix="/settings")
+
+    @app.context_processor
+    def _inject_desktop_mode():
+        return {"desktop_mode": app.config["DESKTOP_MODE"]}
 
     # --- Jinja2 template filters ---
 

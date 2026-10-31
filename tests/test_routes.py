@@ -1,5 +1,8 @@
+import pytest
+
 from app.extensions import db
 from app.models import Job, RunHistory
+from app.routes.jobs import _split_browse_path
 
 JOB_FORM = {
     "name": "Photos",
@@ -79,3 +82,58 @@ def test_flash_messages_work_with_secret_key(client):
     resp = create_job(client)
     page = client.get(resp.headers["Location"])
     assert b"created" in page.data
+
+
+@pytest.mark.parametrize(
+    "path, expected",
+    [
+        ("C:", ("C:/", "")),
+        ("C:/", ("C:/", "")),
+        ("C:\\Users\\joe", ("C:/Users/joe/", "")),
+        ("d:/data/", ("d:/data/", "")),
+        ("\\\\nas\\share\\x", ("//nas/share/x/", "")),
+        ("gdrive:", ("gdrive:", "")),
+        ("gdrive:Backups/photos", ("gdrive:", "Backups/photos")),
+    ],
+)
+def test_browse_path_on_windows(path, expected):
+    assert _split_browse_path(path, windows=True) == expected
+
+
+@pytest.mark.parametrize(
+    "path, expected",
+    [
+        ("/", ("/", "")),
+        ("/mnt/storage", ("/mnt/storage/", "")),
+        # Linux allows single-letter remotes.
+        ("c:", ("c:", "")),
+        ("c:Backups", ("c:", "Backups")),
+    ],
+)
+def test_browse_path_elsewhere(path, expected):
+    assert _split_browse_path(path, windows=False) == expected
+
+
+def test_browse_passes_split_path_to_rclone(client, fake_rclone, monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        fake_rclone, "list_dirs", lambda fs, remote: seen.append((fs, remote)) or {"list": []}
+    )
+    client.get("/jobs/api/browse?path=gdrive:Backups")
+    assert seen == [("gdrive:", "Backups")]
+
+
+def test_templates_load_nothing_from_the_internet(client):
+    page = client.get("/").data.decode()
+    assert "cdn." not in page
+    assert client.get("/static/vendor/bootstrap/bootstrap.min.css").status_code == 200
+    assert client.get("/static/vendor/bootstrap/bootstrap.bundle.min.js").status_code == 200
+    css = client.get("/static/vendor/bootstrap-icons/bootstrap-icons.min.css")
+    assert b"fonts/bootstrap-icons.woff2" in css.data
+    assert client.get("/static/vendor/bootstrap-icons/fonts/bootstrap-icons.woff2").status_code == 200
+
+
+def test_delete_confirmation_escapes_job_name(client):
+    create_job(client, name="Joe's <b>photos</b>")
+    page = client.get("/jobs/").data.decode()
+    assert "data-confirm=\"Delete job 'Joe&#39;s &lt;b&gt;photos&lt;/b&gt;'?\"" in page

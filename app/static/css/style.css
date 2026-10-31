@@ -50,3 +50,8 @@ code {
     font-size: 0.65rem;
     vertical-align: top;
 }
+
+/* The tray app's window focuses the first link whenever it reopens. */
+.navbar-brand:focus-visible {
+    outline: none;
+}

@@ -7,6 +7,10 @@ from app.models import Job, RunHistory
 logger = logging.getLogger(__name__)
 
 
+class JobAlreadyRunning(Exception):
+    pass
+
+
 class JobRunner:
     def __init__(self, rclone_client):
         self.rclone = rclone_client
@@ -14,6 +18,14 @@ class JobRunner:
         self._pending_retries = set()  # run_ids awaiting delayed retry
 
     def start_job(self, job, triggered_by="manual"):
+        existing = RunHistory.query.filter_by(
+            job_id=job.id, status="running"
+        ).first()
+        if existing:
+            raise JobAlreadyRunning(
+                f"Job '{job.name}' is already running as Run #{existing.id}"
+            )
+
         config = job.to_rclone_config()
         filters = job.to_rclone_filter()
 

@@ -2,6 +2,23 @@
 let evtSource = null;
 let lastData = null;
 
+// Forms with data-confirm ask first, in our own dialog: the browser's native one
+// shows the page's address as its title, even inside the Windows app's window.
+document.addEventListener('submit', event => {
+    const form = event.target;
+    const message = form.dataset.confirm;
+    if (!message) return;
+    event.preventDefault();
+
+    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('confirmModal'));
+    document.getElementById('confirm-message').textContent = message;
+    document.getElementById('confirm-ok').onclick = () => {
+        modal.hide();
+        form.submit();  // doesn't fire 'submit' again
+    };
+    modal.show();
+});
+
 function formatBytes(bytes) {
     if (!bytes || bytes === 0) return '0 B';
     const units = ['B', 'KB', 'MB', 'GB', 'TB'];

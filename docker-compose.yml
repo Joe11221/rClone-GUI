@@ -15,5 +15,6 @@ services:
     environment:
       - SECRET_KEY=${SECRET_KEY:?Set SECRET_KEY in .env (see .env.example)}
       - TIMEZONE=${TIMEZONE:-UTC}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-}
       - RCLONE_RC_URL=http://127.0.0.1:5572
     restart: unless-stopped

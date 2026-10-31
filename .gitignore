@@ -22,6 +22,9 @@ data/
 .vscode/
 .idea/
 
+# Downloaded by packaging/fetch_rclone.py
+packaging/bin/
+
 # Test / tooling caches
 .pytest_cache/
 

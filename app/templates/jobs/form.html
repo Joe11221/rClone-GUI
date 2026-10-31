@@ -26,7 +26,7 @@
                             <div class="input-group">
                                 <input type="text" class="form-control" id="source" name="source"
                                        value="{{ job.source if job else '' }}" required
-                                       placeholder="e.g., /mnt/data/photos">
+                                       placeholder="e.g., {{ 'C:\\Data\\Photos' if is_windows else '/mnt/data/photos' }}">
                                 <button type="button" class="btn btn-outline-secondary"
                                         onclick="openBrowser('source')" title="Browse directories">
                                     <i class="bi bi-folder2-open"></i>
@@ -186,7 +186,7 @@
                                 Automatically retry failed or interrupted runs
                             </label>
                         </div>
-                        <div class="form-text">When enabled, failed runs will be retried automatically. Also resumes jobs interrupted by container restart.</div>
+                        <div class="form-text">When enabled, failed runs will be retried automatically. Also resumes jobs interrupted by an app restart.</div>
                     </div>
                     <div class="row" id="resume-options"{% if not (job and job.auto_resume) %} style="display:none"{% endif %}>
                         <div class="col-md-6 mb-3">
@@ -263,6 +263,8 @@
 {% block scripts %}
 <script>
 const availableRemotes = {{ remotes | tojson }};
+const isWindows = {{ is_windows | tojson }};
+const localRoots = {{ local_roots | tojson }};
 let browseTarget = null;
 let currentBrowsePath = null;
 
@@ -298,11 +300,14 @@ function showStartPicker() {
     document.getElementById('browse-select-btn').style.display = 'none';
 
     const list = document.getElementById('browse-start-list');
-    let html = `
+    let html = '';
+    for (const root of localRoots) {
+        html += `
         <button type="button" class="list-group-item list-group-item-action bg-dark text-light border-secondary py-2"
-                data-browse-path="/">
-            <i class="bi bi-hdd me-2 text-info"></i>/ &nbsp;<span class="text-muted small">(local filesystem root)</span>
+                data-browse-path="${escapeHtml(root)}">
+            <i class="bi bi-hdd me-2 text-info"></i>${escapeHtml(root)} &nbsp;<span class="text-muted small">(${isWindows ? 'local drive' : 'local filesystem root'})</span>
         </button>`;
+    }
     for (const r of availableRemotes) {
         html += `
         <button type="button" class="list-group-item list-group-item-action bg-dark text-light border-secondary py-2"
@@ -311,7 +316,7 @@ function showStartPicker() {
         </button>`;
     }
     if (!availableRemotes.length) {
-        html += `<div class="text-muted small p-2">No remotes configured. Configure them via rclone first.</div>`;
+        html += `<div class="text-muted small p-2">{{ 'No remotes configured. Use Configure remotes in the tray menu.' if desktop_mode else 'No remotes configured. Configure them via rclone first.' }}</div>`;
     }
     list.innerHTML = html;
     list.querySelectorAll('[data-browse-path]').forEach(btn => {
@@ -361,42 +366,44 @@ function renderDirs(dirs) {
     });
 }
 
-function navigateInto(dirName) {
-    const path = currentBrowsePath;
-    const colonIdx = path.indexOf(':');
-    let newPath;
-    if (colonIdx !== -1) {
-        const subpath = path.substring(colonIdx + 1).replace(/\/+$/, '');
-        newPath = path.substring(0, colonIdx + 1) + (subpath ? subpath + '/' : '') + dirName;
+// Split a path into the part that can't be navigated above and its folders.
+function splitPath(path) {
+    const normalized = isWindows ? path.replace(/\\/g, '/') : path;
+    let root;
+    let rest;
+    if (isWindows && /^[A-Za-z]:(\/|$)/.test(normalized)) {
+        root = normalized.substring(0, 2) + '/';
+        rest = normalized.substring(2);
+    } else if (isWindows && normalized.startsWith('//')) {
+        const segments = normalized.split('/').filter(Boolean);
+        root = '//' + segments.slice(0, 2).join('/') + '/';
+        rest = segments.slice(2).join('/');
+    } else if (normalized.includes(':')) {
+        const colonIdx = normalized.indexOf(':');
+        root = normalized.substring(0, colonIdx + 1);
+        rest = normalized.substring(colonIdx + 1);
     } else {
-        newPath = path.replace(/\/+$/, '') + '/' + dirName;
+        root = '/';
+        rest = normalized;
     }
-    fetchDirs(newPath);
+    return { root, parts: rest.split('/').filter(Boolean) };
+}
+
+function navigateInto(dirName) {
+    const { root, parts } = splitPath(currentBrowsePath);
+    fetchDirs(root + [...parts, dirName].join('/'));
 }
 
 function goBack() {
     const path = currentBrowsePath;
     if (!path) { showStartPicker(); return; }
 
-    const colonIdx = path.indexOf(':');
-    if (colonIdx !== -1) {
-        const remoteName = path.substring(0, colonIdx + 1);
-        const subpath = path.substring(colonIdx + 1).replace(/\/+$/, '');
-        const parts = subpath.split('/').filter(Boolean);
-        if (!parts.length) {
-            showStartPicker();
-        } else {
-            parts.pop();
-            fetchDirs(remoteName + parts.join('/'));
-        }
+    const { root, parts } = splitPath(path);
+    if (!parts.length) {
+        showStartPicker();
     } else {
-        const parts = path.replace(/\/+$/, '').split('/').filter(Boolean);
-        if (!parts.length) {
-            showStartPicker();
-        } else {
-            parts.pop();
-            fetchDirs('/' + parts.join('/'));
-        }
+        parts.pop();
+        fetchDirs(root + parts.join('/'));
     }
 }
 

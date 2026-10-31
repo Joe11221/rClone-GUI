@@ -51,7 +51,7 @@
                             <i class="bi bi-pencil"></i>
                         </a>
                         <form action="{{ url_for('schedules.delete_schedule', schedule_id=sched.id) }}" method="post" class="d-inline"
-                              onsubmit="return confirm('Delete this schedule?')">
+                              data-confirm="Delete this schedule?">
                             <button type="submit" class="btn btn-outline-danger" title="Delete">
                                 <i class="bi bi-trash"></i>
                             </button>

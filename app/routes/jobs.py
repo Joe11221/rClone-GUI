@@ -1,4 +1,6 @@
 import json
+import os
+import re
 
 from flask import (
     Blueprint,
@@ -15,6 +17,39 @@ from app.extensions import db
 from app.models import Job
 
 jobs_bp = Blueprint("jobs", __name__)
+
+_WINDOWS_DRIVE = re.compile(r"^[A-Za-z]:(/|$)")
+
+
+def _split_browse_path(path, windows=os.name == "nt"):
+    """Split a browser path into the fs and remote rclone's list call expects.
+
+    On Windows rclone reads "C:" as a drive, never as a remote called C, and
+    "//server/share" as a network path.
+    """
+    if windows:
+        normalized = path.replace("\\", "/")
+        if _WINDOWS_DRIVE.match(normalized) or normalized.startswith("//"):
+            return normalized.rstrip("/") + "/", ""
+
+    colon_idx = path.find(":")
+    if colon_idx != -1:
+        # Remote path: "gdrive:" or "gdrive:Backups/photos"
+        fs = path[: colon_idx + 1]  # "gdrive:"
+        remote = path[colon_idx + 1 :].lstrip("/")  # "Backups/photos" or ""
+        return fs, remote
+    # Local path: "/mnt/storage" or "/"
+    return path.rstrip("/") + "/", ""
+
+
+def _browser_context():
+    """Template values for the directory browser on the job form."""
+    windows = os.name == "nt"
+    if windows:
+        local_roots = [drive.replace("\\", "/") for drive in os.listdrives()]
+    else:
+        local_roots = ["/"]
+    return {"is_windows": windows, "local_roots": local_roots}
 
 
 def _parse_order_by(form):
@@ -93,7 +128,9 @@ def create_job():
         remotes = result.get("remotes", [])
     except Exception:
         pass
-    return render_template("jobs/form.html", job=None, remotes=remotes)
+    return render_template(
+        "jobs/form.html", job=None, remotes=remotes, **_browser_context()
+    )
 
 
 @jobs_bp.route("/<int:job_id>/edit", methods=["GET", "POST"])
@@ -138,7 +175,9 @@ def edit_job(job_id):
         remotes = result.get("remotes", [])
     except Exception:
         pass
-    return render_template("jobs/form.html", job=job, remotes=remotes)
+    return render_template(
+        "jobs/form.html", job=job, remotes=remotes, **_browser_context()
+    )
 
 
 @jobs_bp.route("/api/browse")
@@ -153,16 +192,7 @@ def browse_dirs():
         return jsonify({"error": "rclone not available"}), 503
 
     try:
-        colon_idx = path.find(":")
-        if colon_idx != -1:
-            # Remote path: "gdrive:" or "gdrive:Backups/photos"
-            fs = path[: colon_idx + 1]  # "gdrive:"
-            remote = path[colon_idx + 1 :].lstrip("/")  # "Backups/photos" or ""
-        else:
-            # Local path: "/mnt/storage" or "/"
-            fs = path.rstrip("/") + "/"
-            remote = ""
-
+        fs, remote = _split_browse_path(path)
         result = rclone.list_dirs(fs, remote)
         # dirsOnly=True already filters to directories, so just extract names
         dirs = sorted(

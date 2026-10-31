@@ -93,6 +93,8 @@ class Schedule(db.Model):
     enabled = db.Column(db.Boolean, default=True)
     cron_expression = db.Column(db.String(100), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # Cron occurrences later than this count as missed (see SCHEDULE_CATCH_UP).
+    catch_up_after = db.Column(db.DateTime, nullable=True)
 
 
 class RunHistory(db.Model):

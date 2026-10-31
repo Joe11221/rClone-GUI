@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from flask import (
     Blueprint,
     current_app,
@@ -61,6 +63,7 @@ def edit_schedule(schedule_id):
     if request.method == "POST":
         sched.cron_expression = request.form["cron_expression"]
         sched.enabled = "enabled" in request.form
+        sched.catch_up_after = datetime.utcnow()
         db.session.commit()
 
         scheduler_svc = current_app.config["SCHEDULER_SERVICE"]
@@ -91,6 +94,8 @@ def delete_schedule(schedule_id):
 def toggle_schedule(schedule_id):
     sched = Schedule.query.get_or_404(schedule_id)
     sched.enabled = not sched.enabled
+    if sched.enabled:
+        sched.catch_up_after = datetime.utcnow()
     db.session.commit()
 
     scheduler_svc = current_app.config["SCHEDULER_SERVICE"]
