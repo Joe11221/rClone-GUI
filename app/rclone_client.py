@@ -72,8 +72,12 @@ class RcloneClient:
             params["group"] = group
         return self._call("core/stats", params)
 
-    def get_transferred(self):
-        return self._call("core/transferred")
+    def get_transferred(self, group=None):
+        """Recently completed transfers (rclone keeps only the last ~100)."""
+        params = {}
+        if group:
+            params["group"] = group
+        return self._call("core/transferred", params)
 
     def set_bwlimit(self, rate):
         return self._call("core/bwlimit", {"rate": rate})

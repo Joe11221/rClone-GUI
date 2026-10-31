@@ -18,3 +18,9 @@ def test_no_native_confirm_dialogs():
     app_dir = STATIC_JS.parent.parent
     for path in [*app_dir.glob("templates/**/*.html"), *STATIC_JS.glob("*.js")]:
         assert not re.search(r"\bconfirm\(", path.read_text(encoding="utf-8")), path
+
+
+def test_failure_list_never_injects_remote_text_via_innerhtml():
+    """File names and error messages come from remote systems."""
+    source = (STATIC_JS / "errors.js").read_text(encoding="utf-8")
+    assert not re.search(r"innerHTML|insertAdjacentHTML|outerHTML", source)

@@ -439,6 +439,45 @@ code {
     --bs-dropdown-border-radius: 0.75rem;
 }
 
+/* Failure lists (errors.js) */
+.run-errors .re-scroll {
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.run-errors .re-row {
+    cursor: pointer;
+}
+
+.run-errors .re-msg {
+    max-width: 0;           /* lets the cell truncate instead of widening the table */
+    width: 60%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.run-errors .re-row.expanded .re-msg {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.run-errors .re-path {
+    width: 35%;
+}
+
+.run-errors .re-categories {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    align-items: center;
+}
+
+/* The tray app's window focuses the first link whenever it reopens. */
+.navbar-brand:focus-visible {
+    outline: none;
+}
+
 .dropdown-item {
     display: flex;
     align-items: center;

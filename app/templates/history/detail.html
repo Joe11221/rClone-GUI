@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/run_errors.html" import run_errors %}
 {% block title %}Run #{{ run.id }} - rClone GUI{% endblock %}
 
 {% block content %}
@@ -125,6 +126,14 @@
         </div>
         {% endif %}
 
+        {% if run.errors or error_count %}
+        <div class="card bg-dark border-danger mb-3">
+            <div class="card-body">
+                {{ run_errors(run) }}
+            </div>
+        </div>
+        {% endif %}
+
         {% if run.job %}
         <div class="card">
             <div class="card-header">Job Configuration</div>
@@ -143,4 +152,8 @@
         {% endif %}
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/errors.js') }}"></script>
 {% endblock %}
