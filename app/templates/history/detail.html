@@ -20,11 +20,11 @@
             </div>
         </div>
 
-        <div class="card bg-dark border-secondary mb-3">
+        <div class="card mb-3">
             <div class="card-body">
                 <div class="row">
                     <div class="col-md-6">
-                        <table class="table table-dark table-borderless mb-0">
+                        <table class="table table-borderless mb-0">
                             <tr>
                                 <td class="text-muted">Job</td>
                                 <td><strong>{{ run.job.name if run.job else 'Deleted Job' }}</strong></td>
@@ -69,7 +69,7 @@
                         </table>
                     </div>
                     <div class="col-md-6">
-                        <table class="table table-dark table-borderless mb-0">
+                        <table class="table table-borderless mb-0">
                             <tr>
                                 <td class="text-muted">Started</td>
                                 <td>{{ run.started_at|local_time_sec }}</td>
@@ -96,7 +96,7 @@
             </div>
         </div>
 
-        <div class="card bg-dark border-secondary mb-3">
+        <div class="card mb-3">
             <div class="card-header">Transfer Stats</div>
             <div class="card-body">
                 <div class="row text-center">
@@ -117,7 +117,7 @@
         </div>
 
         {% if run.error_message %}
-        <div class="card bg-dark border-danger mb-3">
+        <div class="card border-danger mb-3">
             <div class="card-header text-danger">Error Details</div>
             <div class="card-body">
                 <pre class="mb-0 text-danger">{{ run.error_message }}</pre>
@@ -126,10 +126,10 @@
         {% endif %}
 
         {% if run.job %}
-        <div class="card bg-dark border-secondary">
+        <div class="card">
             <div class="card-header">Job Configuration</div>
             <div class="card-body">
-                <table class="table table-dark table-borderless mb-0">
+                <table class="table table-borderless mb-0">
                     <tr><td class="text-muted">Source</td><td><code>{{ run.job.source }}</code></td></tr>
                     <tr><td class="text-muted">Destination</td><td><code>{{ run.job.destination }}</code></td></tr>
                     <tr><td class="text-muted">Sync Type</td><td>{{ run.job.sync_type }}</td></tr>

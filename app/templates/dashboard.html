@@ -4,41 +4,51 @@
 {% block content %}
 <div class="row">
     <!-- Status Cards -->
-    <div class="col-md-3 mb-3">
-        <div class="card bg-dark border-secondary">
-            <div class="card-body text-center">
-                <h6 class="card-subtitle mb-2 text-muted">rClone Status</h6>
-                <h4>
+    <div class="col-sm-6 col-lg-3 mb-3">
+        <div class="card stat-card">
+            <div class="card-body">
+                <div class="stat-icon"><i class="bi bi-hdd-network"></i></div>
+                <div>
+                    <div class="stat-label">rClone Status</div>
                     {% if rclone_connected %}
-                        <span class="text-success"><i class="bi bi-check-circle-fill"></i> Connected</span>
+                        <p class="stat-value text-success">Connected</p>
                     {% else %}
-                        <span class="text-danger"><i class="bi bi-x-circle-fill"></i> Disconnected</span>
+                        <p class="stat-value text-danger">Disconnected</p>
                     {% endif %}
-                </h4>
+                </div>
             </div>
         </div>
     </div>
-    <div class="col-md-3 mb-3">
-        <div class="card bg-dark border-secondary">
-            <div class="card-body text-center">
-                <h6 class="card-subtitle mb-2 text-muted">Active Transfers</h6>
-                <h4 id="active-count">{{ active_runs|length }}</h4>
+    <div class="col-sm-6 col-lg-3 mb-3">
+        <div class="card stat-card">
+            <div class="card-body">
+                <div class="stat-icon"><i class="bi bi-arrow-left-right"></i></div>
+                <div>
+                    <div class="stat-label">Active Transfers</div>
+                    <p class="stat-value" id="active-count">{{ active_runs|length }}</p>
+                </div>
             </div>
         </div>
     </div>
-    <div class="col-md-3 mb-3">
-        <div class="card bg-dark border-secondary">
-            <div class="card-body text-center">
-                <h6 class="card-subtitle mb-2 text-muted">Transfer Speed</h6>
-                <h4 id="global-speed">--</h4>
+    <div class="col-sm-6 col-lg-3 mb-3">
+        <div class="card stat-card">
+            <div class="card-body">
+                <div class="stat-icon"><i class="bi bi-speedometer2"></i></div>
+                <div>
+                    <div class="stat-label">Transfer Speed</div>
+                    <p class="stat-value" id="global-speed">--</p>
+                </div>
             </div>
         </div>
     </div>
-    <div class="col-md-3 mb-3">
-        <div class="card bg-dark border-secondary">
-            <div class="card-body text-center">
-                <h6 class="card-subtitle mb-2 text-muted">Total Transferred</h6>
-                <h4 id="global-bytes">--</h4>
+    <div class="col-sm-6 col-lg-3 mb-3">
+        <div class="card stat-card">
+            <div class="card-body">
+                <div class="stat-icon"><i class="bi bi-database"></i></div>
+                <div>
+                    <div class="stat-label">Total Transferred</div>
+                    <p class="stat-value" id="global-bytes">--</p>
+                </div>
             </div>
         </div>
     </div>
@@ -47,7 +57,7 @@
 <div class="row">
     <!-- Active Transfers -->
     <div class="col-lg-8 mb-3">
-        <div class="card bg-dark border-secondary">
+        <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <span><i class="bi bi-arrow-repeat"></i> Active Transfers</span>
             </div>
@@ -84,7 +94,7 @@
 
     <!-- Quick Actions -->
     <div class="col-lg-4 mb-3">
-        <div class="card bg-dark border-secondary">
+        <div class="card">
             <div class="card-header">
                 <i class="bi bi-lightning"></i> Quick Start
             </div>
@@ -102,7 +112,7 @@
                             </button>
                         </form>
                     </div>
-                    {% if not loop.last %}<hr class="border-secondary">{% endif %}
+                    {% if not loop.last %}<hr>{% endif %}
                     {% endfor %}
                 {% else %}
                     <p class="text-muted mb-0">No jobs defined. <a href="{{ url_for('jobs.create_job') }}">Create one</a>.</p>
@@ -115,13 +125,13 @@
 <!-- Recent History -->
 <div class="row">
     <div class="col-12">
-        <div class="card bg-dark border-secondary">
+        <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <span><i class="bi bi-journal-text"></i> Recent Runs</span>
                 <a href="{{ url_for('history.list_history') }}" class="btn btn-sm btn-outline-secondary">View All</a>
             </div>
             <div class="card-body p-0">
-                <table class="table table-dark table-hover mb-0">
+                <table class="table table-hover mb-0">
                     <thead>
                         <tr>
                             <th>Job</th>
