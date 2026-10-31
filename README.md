@@ -1,5 +1,28 @@
 # rClone GUI
 
+## Why this exists
+
+rclone is an excellent tool for moving data to and from cloud storage, but
+running it on a schedule means editing command lines and cron files by hand.
+I wanted a web interface for it that I could deploy on my own homelab server,
+and I couldn't find a good option for that.
+
+So I built this one with functionality first. The goal is that anything rclone
+can do for a sync, copy, or move, you can control from the job form, without
+dropping to a terminal. That means exclude patterns, extra flags, per-job
+bandwidth, file comparison method, and transfer ordering are all exposed, with
+sensible defaults so simple jobs stay simple.
+
+Backups are rarely uniform. A single job can hold a few huge files and many
+small ones, and the order rclone transfers them in matters: either the big
+files finish last, or the small ones sit idle behind them. That's why the ordering options (see [Why size + mixed
+ordering?](#why-size--mixed-ordering)) are a first-class part of the job form,
+and why the dashboard and failure list are built to stay readable with
+thousands of files in a run.
+
+It runs in Docker on a home server, or as a Windows app for a desktop PC. Both
+use the same web UI.
+
 > [!CAUTION]
 > **This app has no authentication.** Anyone who can reach its port can browse
 > the mounted filesystem, create jobs, and run `sync`/`move` operations against
