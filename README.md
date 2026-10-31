@@ -38,7 +38,9 @@ to rclone; every operation goes through the **rclone RC HTTP API**.
 - **Jobs** — CRUD for sync/copy/move jobs with source/destination (local
   paths or remotes), exclude patterns, extra flags, per-job bandwidth, and
   `--order-by` composition (field `size`/`name`/`modtime`, direction
-  `asc`/`desc`/`mixed` with a window %).
+  `asc`/`desc`/`mixed` with a window %). The default, **size + mixed**, keeps
+  small and large files moving at the same time — see
+  [Why size + mixed ordering?](#why-size--mixed-ordering).
 - **File comparison method** — per job: default (modtime + size),
   `--size-only`, `--checksum`, or `--ignore-existing`.
 - **Directory browser** — the Browse button on the job form opens a modal
@@ -55,6 +57,32 @@ to rclone; every operation goes through the **rclone RC HTTP API**.
   `retry_of_run_id`. User-stopped runs are never auto-resumed. A manual
   Resume button is available on failed/interrupted runs.
 - **Settings** — configured remotes list and a global bandwidth limit.
+
+## Why size + mixed ordering?
+
+If a backup contains both huge files (videos, disk images) and thousands of
+tiny ones (photos, documents, source code), the order rclone transfers them in
+matters a lot:
+
+| Order | What happens |
+|-------|--------------|
+| Default (directory order) | Arbitrary. Big files can start late and become a long tail at the end. |
+| Largest first (`size,desc`) | Every worker is busy on huge files, so the small files sit idle in the queue — you see few "new files" for hours, and per-file overhead (API calls, round trips) goes unused. |
+| Smallest first (`size,asc`) | Thousands of small files finish quickly, but the huge files only start at the end, so the job's final stretch is a few slow, bandwidth-bound transfers. |
+| **Mixed (`size,mixed,50`)** | Half of the transfer workers take the **smallest** remaining file, the other half take the **largest**. Small files keep flowing while the big ones are also being processed. |
+
+The mixed window is the percentage of workers that go smallest-first (default
+`50`); the rest go largest-first, and each group keeps its direction for the
+whole run. For example, with `Transfers = 4` and `size,mixed,50`, two workers
+chew through small files while two work on large ones. Use a lower percentage
+(say `25`) if you want most workers on the big files, or a higher one if you
+want small files to finish sooner.
+
+Set it per job under **Order By Field / Order Direction / Mixed Window (%)** in
+the job form; it is passed to rclone as `--order-by size,mixed,50`. Because the
+split is across transfer workers, it works best with several parallel
+transfers, and rclone's own docs note that ordering is more accurate with a
+larger `--max-backlog`.
 
 ## Quickstart
 
