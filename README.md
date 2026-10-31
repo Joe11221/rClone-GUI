@@ -1,36 +1,37 @@
 # rClone GUI
 
-Flask web GUI for managing rclone backup jobs on the home network. Create
-sync/copy/move jobs, schedule them with cron, watch live transfer progress,
-and browse run history — all from a browser.
+> [!CAUTION]
+> **This app has no authentication and no CSRF protection.** Anyone who can
+> reach its port can browse the mounted filesystem, create jobs, and run
+> `sync`/`move` operations against your data (which is mounted **read-write**).
+>
+> - By default the port is published on `127.0.0.1` only.
+> - Only set `BIND_ADDRESS=0.0.0.0` on a network you fully trust.
+> - **Never expose it to the internet.** If you need remote access, put it
+>   behind a VPN (WireGuard, Tailscale) or a reverse proxy that enforces
+>   authentication.
 
-This is a custom app (not the upstream rclone web GUI). It never shells out
+A Flask web GUI for managing [rclone](https://rclone.org) backup jobs on a home
+server. Create sync/copy/move jobs, schedule them with cron, watch live
+transfer progress, and browse run history — all from a browser.
+
+This is a standalone app (not the upstream rclone web GUI). It never shells out
 to rclone; every operation goes through the **rclone RC HTTP API**.
 
-## Architecture
+![Dashboard](docs/screenshots/dashboard.png)
 
-```
-Browser <--HTTP/SSE--> Gunicorn (gevent, 1 worker) :8080 <--RC HTTP--> rclone rcd :5572
-                              |
-                          SQLite (./data)
-```
+<table>
+  <tr>
+    <td><img src="docs/screenshots/running.png" alt="Running operations"></td>
+    <td><img src="docs/screenshots/job-form.png" alt="Create job form"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/schedules.png" alt="Schedules"></td>
+    <td><img src="docs/screenshots/history.png" alt="Run history"></td>
+  </tr>
+</table>
 
-Both `rclone rcd` and Gunicorn run in a single container, started by
-`entrypoint.sh` (waits for the RC API, initializes the database on first
-boot, then execs Gunicorn).
-
-Key design rules:
-
-- All rclone operations are async (`_async: true`) and return a `jobid`; the
-  app never blocks on multi-hour transfers.
-- Each run gets a stats group `job_{run_id}` so the SSE endpoint can poll
-  per-job stats (`core/stats?group=...`) and never shows phantom transfers
-  from other rclone processes.
-- Gevent is mandatory (SSE connections hold greenlets); stdlib
-  `threading`/`queue` must not be used.
-- Gunicorn runs with `workers = 1` — the in-memory `_active_runs` dict and
-  the APScheduler monitor must live in a single process (see
-  `gunicorn.conf.py`).
+*(Screenshots use demo data served by a stub rclone.)*
 
 ## Features
 
@@ -38,9 +39,12 @@ Key design rules:
   paths or remotes), exclude patterns, extra flags, per-job bandwidth, and
   `--order-by` composition (field `size`/`name`/`modtime`, direction
   `asc`/`desc`/`mixed` with a window %).
+- **File comparison method** — per job: default (modtime + size),
+  `--size-only`, `--checksum`, or `--ignore-existing`.
 - **Directory browser** — the Browse button on the job form opens a modal
   that walks local paths and remotes via `operations/list`.
-- **Schedules** — per-job cron schedules (APScheduler), enable/disable.
+- **Schedules** — per-job cron schedules (APScheduler), enable/disable,
+  interpreted in your configured `TIMEZONE`.
 - **Live dashboard** — SSE-driven progress bars, speed, bytes, file counts
   (new vs unchanged), and ETA.
 - **History** — every run is recorded with final stats and status
@@ -54,54 +58,109 @@ Key design rules:
 
 ## Quickstart
 
+Requires Docker with the Compose plugin, and an existing rclone config
+(`rclone config`) if you want to use cloud remotes.
+
 ```bash
 cp .env.example .env
-# Edit .env: PORT, SECRET_KEY, RCLONE_CONFIG, DATA_PATH
+python3 -c "import secrets; print(secrets.token_hex(32))"   # paste into SECRET_KEY
+# Edit .env: SECRET_KEY, TIMEZONE, RCLONE_CONFIG, DATA_PATH, (PORT, BIND_ADDRESS)
 docker compose up -d --build
 ```
 
-The GUI is served at `http://<host>:${PORT}`. The container auto-restarts
-(`unless-stopped`).
+Then open `http://127.0.0.1:${PORT}` (default `8080`). The container
+auto-restarts (`unless-stopped`).
+
+The container **refuses to start without a real `SECRET_KEY`**; placeholder
+values are rejected.
 
 ### Configuration (`.env`)
 
 | Key | Default | Description |
 |-----|---------|-------------|
+| `SECRET_KEY` | — (**required**) | Flask secret key. Generate a random value. |
 | `PORT` | `8080` | Host port for the web GUI |
-| `SECRET_KEY` | — | Flask secret key; set a random value |
+| `BIND_ADDRESS` | `127.0.0.1` | Host address the port is published on. `0.0.0.0` exposes it to your whole network — see the warning above. |
+| `TIMEZONE` | `UTC` | IANA timezone (e.g. `America/New_York`) used to display times **and** to interpret cron schedules |
 | `RCLONE_CONFIG` | `~/.config/rclone` | Host path to the rclone config directory (remotes are defined here) |
 | `DATA_PATH` | `/mnt/storage` | Host data path, mounted at `/mnt/` inside the container |
 
-Current cephas deployment: `PORT=9020`, `RCLONE_CONFIG=~/.config/rclone`,
-`DATA_PATH=/mnt/` — so the GUI can browse all mounted pools under `/mnt/`.
+Example for a home server you want to reach from other machines on your LAN:
+
+```ini
+PORT=9020
+BIND_ADDRESS=0.0.0.0
+TIMEZONE=America/New_York
+DATA_PATH=/mnt
+```
 
 ### Volumes
 
 - `./data` -> `/app/instance` — SQLite database (gitignored)
-- `${RCLONE_CONFIG}` -> `/root/.config/rclone` — rclone remotes/config
+- `${RCLONE_CONFIG}` -> `/root/.config/rclone` — rclone remotes/config. This
+  contains your cloud credentials; keep it out of version control.
 - `${DATA_PATH}` -> `/mnt/` (**read-write**) — the host data hierarchy.
   Note: this gives the container write access to everything under
-  `DATA_PATH` (on cephas: all SnapRAID pools); move operations to local
-  destinations rely on this.
+  `DATA_PATH`; `move` operations to local destinations rely on this. Point it
+  at the narrowest directory that works for you.
 
-## How a run works
+### Upgrading
+
+The database schema is created and upgraded by the app itself on startup
+(`db.create_all()` plus `_ensure_columns()` in `app/__init__.py`), so there is
+no separate migration step. Just `docker compose up -d --build`.
+
+If you previously ran a version where `TIMEZONE` was not set in
+`docker-compose.yml`, note that cron schedules used the container's clock
+(UTC) while times were displayed in `America/New_York`. Schedules now run in
+`TIMEZONE`, so set it explicitly and double-check your cron expressions.
+
+## Architecture
+
+```
+Browser <--HTTP/SSE--> Gunicorn (gevent, 1 worker) :8080 <--RC HTTP--> rclone rcd :5572
+                              |
+                          SQLite (./data)
+```
+
+Both `rclone rcd` and Gunicorn run in a single container, started by
+`entrypoint.sh`. The rclone RC API is unauthenticated and bound to
+`127.0.0.1` inside the container, so only the Flask app can reach it.
+
+Key design rules:
+
+- **Nothing runs unless the user created it.** The app only tracks runs in
+  `JobRunner._active_runs`, and the SSE endpoint polls rclone per stats group
+  (`core/stats?group=job_{run_id}`), never the global stats, so unrelated
+  rclone activity never shows up.
+- **All rclone operations are async** (`_async: true`) and return a `jobid`;
+  the app never blocks on multi-hour transfers.
+- **Each run gets a stats group** `job_{run_id}` for per-job metrics. SSE and
+  the dashboard depend on this naming.
+- **Gevent is mandatory** (SSE connections hold greenlets). `wsgi.py` calls
+  `gevent.monkey.patch_all()` first; don't use stdlib `threading`/`queue`.
+- **Gunicorn runs with `workers = 1`** — the in-memory `_active_runs` dict and
+  the APScheduler monitor must live in a single process (see
+  `gunicorn.conf.py`).
+
+### How a run works
 
 1. Start -> `POST /ops/start/<job_id>` -> `JobRunner.start_job()`
 2. A `RunHistory` row is created (status `running`) and rclone is called
    with `_async=true` and `_group=job_{run_id}`
 3. The SSE endpoint polls `core/stats?group=job_{run_id}` (every 2s while
    active, 5s when idle)
-4. A 10-second monitor finalizes completed runs and writes final stats to
-   the DB
+4. A 10-second monitor finalizes completed runs and writes final stats to the
+   DB
 5. Auto-resume (if enabled) re-dispatches orphaned/failed runs
 
-## Project structure
+### Project structure
 
 ```
 app/
-├── __init__.py           # App factory — wires everything, _ensure_columns() migration
-├── config.py             # Env-based config (RCLONE_RC_URL, SECRET_KEY, etc.)
-├── extensions.py         # SQLAlchemy + Flask-Migrate instances
+├── __init__.py           # App factory, startup checks, _ensure_columns() schema upgrades
+├── config.py             # Env-based config (SECRET_KEY, TIMEZONE, RCLONE_RC_URL, ...)
+├── extensions.py         # SQLAlchemy instance
 ├── models.py             # Job, Schedule, RunHistory (SQLite)
 ├── rclone_client.py      # HTTP wrapper for rclone RC API
 ├── routes/
@@ -113,42 +172,56 @@ app/
 │   └── settings.py       # Remotes list, global bandwidth limit
 ├── services/
 │   ├── job_runner.py     # Core orchestration: start/stop jobs, finalize runs
-│   ├── scheduler_service.py  # APScheduler cron triggers
-│   └── stats_collector.py    # LEGACY — unused, do not re-introduce
+│   └── scheduler_service.py  # APScheduler cron triggers
 ├── templates/            # Jinja2, Bootstrap 5 dark theme
-└── static/
-    ├── css/style.css
-    └── js/
-        ├── app.js        # SSE client, formatBytes/Speed/ETA helpers
-        └── dashboard.js  # Per-run live stats updates
+└── static/               # CSS + vanilla JS (SSE client, live stats)
+tests/                    # pytest suite (no rclone needed)
 ```
 
-## Tech stack
-
-- **Backend**: Flask 3.1, SQLAlchemy + Flask-Migrate (SQLite), APScheduler
-  3.10, Gunicorn + gevent
-- **rclone**: installed in the image via the official script; RC API on
-  `127.0.0.1:5572` with `--rc-no-auth`
-- **Frontend**: Bootstrap 5 (CDN), Bootstrap Icons, vanilla JS (no build
-  tools)
+Tech stack: Flask 3.1, SQLAlchemy (SQLite), APScheduler 3.10, Gunicorn +
+gevent, Bootstrap 5 (CDN) and vanilla JS (no build tools).
 
 ## Security notes
 
-- **No authentication** — intended for a trusted LAN only. Blueprints are
+- **No authentication** — intended for a trusted network only. Blueprints are
   structured so Flask-Login can be added later (`@login_required`).
 - **No CSRF protection** (would need Flask-WTF).
+- The directory browser (`/jobs/api/browse`) and job `extra_flags` let any
+  user of the app list arbitrary paths and set arbitrary rclone options.
+- The data path is mounted read-write, and mounted rclone config contains your
+  remote credentials.
+- The published port defaults to loopback; widening it is an explicit opt-in
+  (`BIND_ADDRESS`).
 - The rclone RC API is bound to loopback inside the container only.
 
-## Gotchas
+Found a security problem? Please open an issue (or contact the maintainer
+privately for anything sensitive).
 
-- `stats_collector.py` is legacy/unused — SSE polling is inline in
-  `routes/sse.py`; the old thread-based collector conflicted with gevent.
+## Development
+
+```bash
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements-dev.txt
+pytest
+```
+
+The tests use an in-memory SQLite database and a fake rclone client, and do
+not start any background scheduler threads (`BACKGROUND_TASKS_ENABLED = False`).
+CI runs the test suite and a Docker build on every push and pull request.
+
+Gotchas:
+
 - `exclude_patterns`/`extra_flags` are JSON strings in SQLite; use
   `job.get_excludes()` / `job.get_extra_flags()`.
 - `RunHistory` does not snapshot job config; the detail page shows the
   *current* job config.
 - Move operations may not resume cleanly after an interruption (partial file
   relocation); a warning is shown in the job form.
-- `_ensure_columns()` in `app/__init__.py` adds new columns to existing
-  SQLite databases at startup.
-- Contributor/AI development guide: see `CLAUDE.md`.
+- New columns on existing tables need an `ALTER TABLE` entry in
+  `_ensure_columns()` (`create_all()` won't add them).
+- APScheduler jobs run outside a request, so DB access needs
+  `app.app_context()`.
+
+## License
+
+[MIT](LICENSE)
