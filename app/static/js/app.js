@@ -80,3 +80,14 @@ function connectSSE() {
 
 // Connect on page load
 document.addEventListener('DOMContentLoaded', connectSSE);
+
+// Release the connection when leaving a page. Chrome allows 6 per host, and
+// streams left open on old pages make later navigations hang until they expire.
+window.addEventListener('pagehide', function() {
+    if (evtSource) evtSource.close();
+});
+
+// Reconnect if the page is restored from the back/forward cache
+window.addEventListener('pageshow', function(event) {
+    if (event.persisted) connectSSE();
+});
