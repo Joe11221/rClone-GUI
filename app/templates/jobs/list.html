@@ -43,18 +43,18 @@
                     {% endif %}
                 </td>
                 <td>
-                    <div class="btn-group btn-group-sm">
+                    <div class="d-flex gap-2 action-buttons">
                         <form action="{{ url_for('ops.start_job', job_id=job.id) }}" method="post" class="d-inline">
-                            <button type="submit" class="btn btn-success" title="Start">
+                            <button type="submit" class="btn btn-sm btn-success" title="Start">
                                 <i class="bi bi-play-fill"></i>
                             </button>
                         </form>
-                        <a href="{{ url_for('jobs.edit_job', job_id=job.id) }}" class="btn btn-outline-primary" title="Edit">
+                        <a href="{{ url_for('jobs.edit_job', job_id=job.id) }}" class="btn btn-sm btn-outline-primary" title="Edit">
                             <i class="bi bi-pencil"></i>
                         </a>
                         <form action="{{ url_for('jobs.delete_job', job_id=job.id) }}" method="post" class="d-inline"
                               data-confirm="Delete job '{{ job.name }}'?">
-                            <button type="submit" class="btn btn-outline-danger" title="Delete">
+                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
                                 <i class="bi bi-trash"></i>
                             </button>
                         </form>

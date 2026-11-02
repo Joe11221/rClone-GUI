@@ -38,6 +38,7 @@ def stream():
                         run_stats[str(run_id)] = {
                             "stats": stats,
                             "rclone_jobid": rclone_jobid,
+                            "suspects": job_runner.suspects.top(run_id),
                         }
                         total_speed += stats.get("speed", 0) or 0
                         total_bytes += stats.get("bytes", 0) or 0

@@ -10,7 +10,8 @@
 <div id="running-operations">
     {% if runs %}
         {% for run in runs %}
-        <div class="card mb-3 transfer-item" data-run-id="{{ run.id }}">
+        <div class="card mb-3 transfer-item" data-run-id="{{ run.id }}"
+             data-excludes="{{ (run.job.get_excludes() if run.job else [])|tojson|forceescape }}">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-start mb-2">
                     <div>
@@ -47,6 +48,10 @@
                         <div class="transfer-remaining">--</div>
                     </div>
                     <div class="col">
+                        <small class="text-muted">Files Left</small>
+                        <div class="transfer-files-left">--</div>
+                    </div>
+                    <div class="col">
                         <small class="text-muted">New Files</small>
                         <div class="transfer-files">--</div>
                     </div>
@@ -70,6 +75,18 @@
                     <div class="file-list"></div>
                 </div>
 
+                <!-- Directories full of tiny files, spotted while the run is going -->
+                <div class="mt-3 suspects" style="display: none;">
+                    <div class="d-flex justify-content-between align-items-baseline">
+                        <small class="text-muted">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            Possibly unwanted directories: many tiny files
+                        </small>
+                        <small class="text-muted">Excluding applies from the next run</small>
+                    </div>
+                    <div class="suspect-list"></div>
+                </div>
+
                 {{ run_errors(run, live=True) }}
             </div>
         </div>
@@ -89,4 +106,5 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 <script src="{{ url_for('static', filename='js/errors.js') }}"></script>
+<script src="{{ url_for('static', filename='js/suspects.js') }}"></script>
 {% endblock %}

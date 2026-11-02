@@ -1,16 +1,12 @@
 // Theme selection. Loaded in <head> so the theme is applied before first paint.
 const THEMES = {
-    graphite: { label: 'Graphite', mode: 'dark',  bg: '#121316', accent: '#6c8cff' },
-    midnight: { label: 'Midnight', mode: 'dark',  bg: '#0b1020', accent: '#4f9dff' },
-    nord:     { label: 'Nord',     mode: 'dark',  bg: '#2e3440', accent: '#88c0d0' },
-    dracula:  { label: 'Dracula',  mode: 'dark',  bg: '#1e1f29', accent: '#bd93f9' },
-    forest:   { label: 'Forest',   mode: 'dark',  bg: '#0f1a16', accent: '#34d399' },
-    glass:    { label: 'Liquid Glass', mode: 'dark',  bg: '#4f46e5', accent: '#7dd3fc' },
-    'soft-glass':  { label: 'Soft Glass',   mode: 'dark',  bg: '#0a0d1f', accent: '#7dd3fc' },
-    frost:    { label: 'Frost',        mode: 'light', bg: '#bfdbfe', accent: '#3b82f6' },
-    'soft-frost': { label: 'Soft Frost', mode: 'light', bg: '#eef2fa', accent: '#3b82f6' },
-    'dark-frost': { label: 'Dark Frost', mode: 'dark',  bg: '#141a2a', accent: '#60a5fa' },
-    paper:    { label: 'Paper',    mode: 'light', bg: '#ffffff', accent: '#4f46e5' },
+    graphite:  { label: 'Graphite',     mode: 'dark',  bg: '#121316', accent: '#6c8cff' },
+    glass:     { label: 'Liquid Glass', mode: 'dark',  bg: '#4f46e5', accent: '#8be0ff' },
+    frost:     { label: 'Frost',        mode: 'light', bg: '#bfdbfe', accent: '#2f6fed' },
+    keycaps:   { label: 'Keycaps',      mode: 'light', bg: '#fdf0d5', accent: '#f0357e' },
+    terminal:  { label: 'Terminal',     mode: 'dark',  bg: '#030a05', accent: '#39ff7a' },
+    synthwave: { label: 'Synthwave',    mode: 'dark',  bg: '#2a0a4a', accent: '#ff2e97' },
+    brutalist: { label: 'Brutalist',    mode: 'light', bg: '#ffd600', accent: '#111111' },
 };
 const DEFAULT_THEME = 'graphite';
 

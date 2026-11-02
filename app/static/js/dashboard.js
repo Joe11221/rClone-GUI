@@ -76,6 +76,7 @@ window.addEventListener('rclone-stats', function(e) {
         // Update per-run stats columns (operations/running page)
         const bytesCol = item.querySelector('.transfer-bytes');
         const remainingCol = item.querySelector('.transfer-remaining');
+        const filesLeftCol = item.querySelector('.transfer-files-left');
         const filesCol = item.querySelector('.transfer-files');
         const checksCol = item.querySelector('.transfer-checks');
         const errorsCol = item.querySelector('.transfer-errors');
@@ -88,6 +89,13 @@ window.addEventListener('rclone-stats', function(e) {
         if (remainingCol) {
             remainingCol.textContent = totalBytes > 0
                 ? formatBytes(Math.max(0, totalBytes - displayBytes))
+                : '--';
+        }
+        if (filesLeftCol) {
+            // totalTransfers grows as rclone finds files, so this is "known so far".
+            const totalFiles = stats.totalTransfers || 0;
+            filesLeftCol.textContent = totalFiles > 0
+                ? Math.max(0, totalFiles - displayTransfers).toLocaleString()
                 : '--';
         }
         if (filesCol) filesCol.textContent = displayTransfers;

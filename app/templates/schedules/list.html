@@ -41,18 +41,18 @@
                     {% endif %}
                 </td>
                 <td>
-                    <div class="btn-group btn-group-sm">
+                    <div class="d-flex gap-2 action-buttons">
                         <form action="{{ url_for('schedules.toggle_schedule', schedule_id=sched.id) }}" method="post" class="d-inline">
-                            <button type="submit" class="btn btn-outline-{{ 'warning' if sched.enabled else 'success' }}" title="{{ 'Disable' if sched.enabled else 'Enable' }}">
+                            <button type="submit" class="btn btn-sm btn-outline-{{ 'warning' if sched.enabled else 'success' }}" title="{{ 'Disable' if sched.enabled else 'Enable' }}">
                                 <i class="bi bi-{{ 'pause-fill' if sched.enabled else 'play-fill' }}"></i>
                             </button>
                         </form>
-                        <a href="{{ url_for('schedules.edit_schedule', schedule_id=sched.id) }}" class="btn btn-outline-primary" title="Edit">
+                        <a href="{{ url_for('schedules.edit_schedule', schedule_id=sched.id) }}" class="btn btn-sm btn-outline-primary" title="Edit">
                             <i class="bi bi-pencil"></i>
                         </a>
                         <form action="{{ url_for('schedules.delete_schedule', schedule_id=sched.id) }}" method="post" class="d-inline"
                               data-confirm="Delete this schedule?">
-                            <button type="submit" class="btn btn-outline-danger" title="Delete">
+                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
                                 <i class="bi bi-trash"></i>
                             </button>
                         </form>

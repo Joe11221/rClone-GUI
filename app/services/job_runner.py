@@ -4,6 +4,7 @@ from datetime import datetime
 from app.extensions import db
 from app.models import Job, RunHistory
 from app.services.run_errors import record_failures
+from app.services.suspects import SuspectTracker
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,7 @@ class JobRunner:
         self.rclone = rclone_client
         self._active_runs = {}  # {run_history_id: rclone_jobid}
         self._pending_retries = set()  # run_ids awaiting delayed retry
+        self.suspects = SuspectTracker()
 
     def start_job(self, job, triggered_by="manual"):
         existing = RunHistory.query.filter_by(
@@ -117,7 +119,9 @@ class JobRunner:
             return 0
         try:
             reply = self.rclone.get_transferred(group=run.stats_group)
-            return record_failures(run, (reply or {}).get("transferred"))
+            transferred = (reply or {}).get("transferred")
+            self.suspects.observe(run.id, transferred)
+            return record_failures(run, transferred)
         except Exception as exc:
             db.session.rollback()
             logger.warning(
@@ -134,6 +138,7 @@ class JobRunner:
             run = db.session.get(RunHistory, run_id)
             if run:
                 self.collect_errors(run)
+        self.suspects.prune(self._active_runs)
 
     def check_and_update_runs(self):
         for run_id, rclone_jobid in list(self._active_runs.items()):

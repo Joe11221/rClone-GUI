@@ -1,3 +1,5 @@
+import json
+
 from flask import (
     Blueprint,
     current_app,
@@ -5,11 +7,13 @@ from flask import (
     jsonify,
     redirect,
     render_template,
+    request,
     url_for,
 )
 
 from app.extensions import db
 from app.models import Job, RunHistory
+from app.services.suspects import exclude_pattern
 
 ops_bp = Blueprint("ops", __name__)
 
@@ -98,3 +102,23 @@ def job_status(run_id):
                 pass
 
     return jsonify(result)
+
+
+@ops_bp.route("/exclude/<int:run_id>", methods=["POST"])
+def exclude_directory(run_id):
+    """Add a directory seen during a run to its job's exclude list.
+
+    The running transfer isn't changed; the rule applies from the next run.
+    """
+    run = RunHistory.query.get_or_404(run_id)
+    directory = ((request.get_json(silent=True) or {}).get("path") or "").strip("/")
+    if not run.job or not directory:
+        return jsonify(error="A job and a directory are required."), 400
+
+    pattern = exclude_pattern(directory)
+    excludes = run.job.get_excludes()
+    added = pattern not in excludes
+    if added:
+        run.job.exclude_patterns = json.dumps([*excludes, pattern])
+        db.session.commit()
+    return jsonify(pattern=pattern, added=added)
