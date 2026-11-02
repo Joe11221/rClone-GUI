@@ -20,6 +20,8 @@ class Config:
     RCLONE_RC_URL = os.environ.get("RCLONE_RC_URL", "http://localhost:5572")
     RCLONE_RC_USER = os.environ.get("RCLONE_RC_USER", "")
     RCLONE_RC_PASS = os.environ.get("RCLONE_RC_PASS", "")
+    # Run directly for browser sign-ins, which rclone's API doesn't offer.
+    RCLONE_BINARY = os.environ.get("RCLONE_BINARY", "rclone")
     # IANA name (e.g. "America/New_York"). Used both for displaying times and
     # for interpreting cron schedules.
     TIMEZONE = os.environ.get("TIMEZONE", "UTC")

@@ -1,4 +1,9 @@
 {% extends "base.html" %}
+{% macro type_button(type) %}
+<button type="button" class="btn btn-outline-secondary type-card" data-type="{{ type.name }}"
+        data-search="{{ (type.label ~ ' ' ~ type.name ~ ' ' ~ type.description)|lower }}"
+        title="{{ type.description }}">{{ type.label }}</button>
+{% endmacro %}
 {% block title %}Add Remote - rClone GUI{% endblock %}
 
 {% block content %}
@@ -9,14 +14,36 @@
         {% if error %}
         <div class="alert alert-danger">{{ error }}</div>
         {% else %}
-        <div class="card mb-3">
-            <div class="card-header">1. Storage type</div>
-            <div class="card-body">
-                <label for="type-search" class="form-label">Search all {{ types|length }} types</label>
-                <input type="text" class="form-control" id="type-search" list="type-list"
-                       placeholder="e.g. Google Drive, S3, SFTP" autocomplete="off">
-                <datalist id="type-list"></datalist>
-                <div class="d-flex flex-wrap gap-2 mt-3" id="popular-types"></div>
+        <div class="card mb-3" id="type-card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span id="type-title">1. Where is your storage?</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="type-change" style="display: none;">Change</button>
+            </div>
+            <div class="card-body" id="type-picker">
+                <input type="search" class="form-control" id="type-search"
+                       placeholder="Search all {{ types|length }} types, e.g. Google Drive, Wasabi, NAS"
+                       aria-label="Search storage types" autocomplete="off">
+                <div id="type-groups">
+                    <div class="type-group">
+                        <div class="type-group-title">Most used</div>
+                        <div class="type-grid">
+                            {% for type in types if type.popular %}
+                            {{ type_button(type) }}
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% for category, members in categories if members %}
+                    <div class="type-group">
+                        <div class="type-group-title">{{ category }}</div>
+                        <div class="type-grid">
+                            {% for type in members %}
+                            {{ type_button(type) }}
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                    <p class="text-muted mt-3 mb-0" id="type-none" style="display: none;">No storage type matches that.</p>
+                </div>
             </div>
         </div>
 
@@ -32,33 +59,23 @@
                         </div>
                     </div>
 
+                    <div id="basic-options"></div>
+
                     <div id="oauth-box" class="mb-3" style="display: none;">
-                        <label class="form-label">Sign in</label>
-                        {% if desktop_mode %}
-                        <div class="form-check">
-                            <input class="form-check-input" type="radio" name="signin" id="signin-browser" value="browser" checked>
-                            <label class="form-check-label" for="signin-browser">
-                                Sign in with my browser
-                                <small class="text-muted d-block">rclone opens a sign-in page; come back here when you have approved it.</small>
-                            </label>
+                        <div class="form-text">
+                            <i class="bi bi-box-arrow-up-right"></i>
+                            No passwords here. You'll sign in on the provider's own page next.
                         </div>
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="radio" name="signin" id="signin-token" value="token">
-                            <label class="form-check-label" for="signin-token">I already have a token</label>
-                        </div>
-                        {% endif %}
-                        <div id="token-box"{% if desktop_mode %} style="display: none;"{% endif %}>
-                            <textarea class="form-control font-monospace" id="remote-token" rows="3"
-                                      placeholder='Paste the output of rclone authorize'></textarea>
+                        <button type="button" class="btn btn-link btn-sm p-0" data-bs-toggle="collapse"
+                                data-bs-target="#token-box">I already have a token</button>
+                        <div class="collapse" id="token-box">
+                            <textarea class="form-control font-monospace mt-2" id="remote-token" rows="3"
+                                      placeholder="Paste the output of rclone authorize"></textarea>
                             <div class="form-text">
-                                On a computer with a browser, run
-                                <code id="authorize-command">rclone authorize</code>,
-                                sign in, and paste everything it prints.
+                                From <code id="authorize-command">rclone authorize</code> on another computer.
                             </div>
                         </div>
                     </div>
-
-                    <div id="basic-options"></div>
 
                     <div id="advanced-wrap" style="display: none;">
                         <button type="button" class="btn btn-sm btn-outline-secondary mb-3"
@@ -71,15 +88,49 @@
             </div>
 
             <div class="alert alert-danger" id="remote-error" style="display: none;"></div>
-            <div class="alert alert-info" id="remote-waiting" style="display: none;">
-                <span class="spinner-border spinner-border-sm me-2"></span>
-                Waiting for you to sign in in the browser window rclone opened&hellip;
+            <div class="card mb-3" id="signin-panel" style="display: none;">
+                <div class="card-header">Sign in</div>
+                <div class="card-body">
+                    <div class="alert alert-warning" id="signin-notice" style="display: none; white-space: pre-line;"></div>
+                    <p id="signin-starting" class="mb-0">
+                        <span class="spinner-border spinner-border-sm me-2"></span>Preparing sign-in&hellip;
+                    </p>
+                    <div id="signin-ready" style="display: none;">
+                        {% if desktop_mode %}
+                        <p>Your browser should have opened. Approve access there, then come back.</p>
+                        <a class="btn btn-primary" id="signin-link" target="_blank" rel="noopener noreferrer">
+                            <i class="bi bi-box-arrow-up-right"></i> Open the sign-in page again
+                        </a>
+                        <p class="mt-3 mb-0 text-muted">
+                            <span class="spinner-border spinner-border-sm me-2"></span>Waiting for you to approve&hellip;
+                        </p>
+                        {% else %}
+                        <p class="mb-2"><strong>Step 1.</strong> Sign in and approve access.</p>
+                        <a class="btn btn-primary mb-3" id="signin-link" target="_blank" rel="noopener noreferrer">
+                            <i class="bi bi-box-arrow-up-right"></i> Open the sign-in page
+                        </a>
+                        <p class="mb-2">
+                            <strong>Step 2.</strong> The browser then lands on a page that <em>can't be reached</em>.
+                            That's expected. Copy its whole address and paste it here.
+                        </p>
+                        <div class="input-group">
+                            <input type="text" class="form-control font-monospace" id="signin-url"
+                                   placeholder="http://localhost:53682/?state=..." autocomplete="off"
+                                   aria-label="Address from the browser">
+                            <button type="button" class="btn btn-success" id="signin-finish">Finish</button>
+                        </div>
+                        {% endif %}
+                    </div>
+                    <p id="signin-finishing" class="mb-0" style="display: none;">
+                        <span class="spinner-border spinner-border-sm me-2"></span>Signed in. Finishing setup&hellip;
+                    </p>
+                </div>
             </div>
 
             <div class="d-flex justify-content-between">
                 <a href="{{ url_for('settings.index') }}" class="btn btn-outline-secondary">Cancel</a>
                 <button type="submit" class="btn btn-success" id="remote-submit">
-                    <i class="bi bi-check-lg"></i> Create remote
+                    <i class="bi bi-check-lg"></i> <span id="remote-submit-label">Create remote</span>
                 </button>
             </div>
         </form>
@@ -91,9 +142,7 @@
 {% block scripts %}
 {% if not error %}
 <script>
-const remoteTypes = {{ types | tojson }};
 const existingRemotes = {{ existing | tojson }};
-const desktopMode = {{ desktop_mode | tojson }};
 </script>
 <script src="{{ url_for('static', filename='js/remotes.js') }}"></script>
 {% endif %}

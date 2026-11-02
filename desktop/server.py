@@ -35,6 +35,7 @@ def make_config(user_settings, rclone, port):
         RCLONE_RC_URL = rclone.url
         RCLONE_RC_USER = rclone.user
         RCLONE_RC_PASS = rclone.password
+        RCLONE_BINARY = str(rclone.binary)
         TIMEZONE = user_settings.get("timezone") or settings.system_timezone()
         ALLOWED_HOSTS = [f"127.0.0.1:{port}", f"localhost:{port}"]
         # A PC that was off for days should still run its backup when it's back.

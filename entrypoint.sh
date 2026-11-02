@@ -12,7 +12,7 @@ RCLONE_RC_PASS=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d '
 export RCLONE_RC_PASS
 
 echo "Starting rclone rcd..."
-rclone rcd     --rc-addr=127.0.0.1:5572     &
+rclone rcd --rc-addr=127.0.0.1:5572 &
 
 # Wait for rclone to be ready
 echo "Waiting for rclone RC API..."

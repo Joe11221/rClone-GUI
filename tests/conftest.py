@@ -49,7 +49,7 @@ class FakeRclone:
     def list_remotes(self):
         return {"remotes": ["gdrive", "pcloud"]}
 
-    def list_dirs(self, fs, remote):
+    def list_dirs(self, fs, remote="", timeout=None):
         return {"list": [{"Name": "b"}, {"Name": "a"}]}
 
 

@@ -52,6 +52,7 @@
     --sheen: rgba(255, 255, 255, 0.13);
     --glass-shadow: 0 10px 34px rgba(2, 6, 23, 0.5);
     --glass-menu-bg: rgba(14, 18, 42, 0.92);
+    --app-menu-bg: #141833;
 }
 
 [data-theme="glass"][data-bs-theme="light"] {
@@ -73,6 +74,7 @@
     --sheen: rgba(255, 255, 255, 0.55);
     --glass-shadow: 0 10px 30px rgba(60, 80, 130, 0.18);
     --glass-menu-bg: rgba(255, 255, 255, 0.94);
+    --app-menu-bg: #ffffff;
 }
 
 /* Keycaps. --ink is the outline and key-text colour; keys stay candy-coloured
@@ -173,6 +175,7 @@
     --grad-b: #ff2e97;
     --neon-glow: 0 0 10px rgba(255, 46, 151, 0.8);
     --input-bg: rgba(10, 2, 30, 0.6);
+    --app-menu-bg: #1a0838;
 }
 
 [data-theme="synthwave"][data-bs-theme="light"] {
@@ -195,6 +198,7 @@
     --grad-b: #b0005d;
     --neon-glow: none;
     --input-bg: rgba(255, 255, 255, 0.85);
+    --app-menu-bg: #ffffff;
 }
 
 /* Brutalist. --ink is the outline and hard-shadow colour (black on paper,
@@ -370,6 +374,22 @@ h4 {
     color: var(--app-text);
     border-color: var(--app-accent);
     box-shadow: 0 0 0 0.2rem rgba(var(--app-accent-rgb), 0.2);
+}
+
+/* Native pop-up lists. Browsers paint them over a solid colour of their own, so
+   a translucent field colour would wash out, hence a solid --app-menu-bg. */
+[data-bs-theme="dark"] {
+    color-scheme: dark;
+}
+
+[data-bs-theme="light"] {
+    color-scheme: light;
+}
+
+select option,
+select optgroup {
+    background-color: var(--app-menu-bg, var(--app-surface-2));
+    color: var(--app-text);
 }
 
 .form-control::placeholder {
@@ -1539,4 +1559,32 @@ code {
 [data-theme="brutalist"] .dropdown-item.active {
     background: var(--app-accent);
     color: var(--on-color);
+}
+
+/* ---------- Add remote ---------- */
+
+.type-group-title {
+    color: var(--app-muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin: 1rem 0 0.5rem;
+}
+
+.type-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(11.5rem, 1fr));
+    gap: 0.5rem;
+}
+
+.type-card {
+    text-align: left;
+    overflow-wrap: anywhere;
+}
+
+#type-groups {
+    max-height: 26rem;
+    overflow-y: auto;
+    padding-right: 0.25rem;
 }

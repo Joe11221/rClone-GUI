@@ -1,5 +1,12 @@
-// "Possibly unwanted directories": folders full of tiny files, detected live by
-// the server. Excluding one adds a rule to the job for its next run.
+// "Possibly unwanted directories": caches, dependency folders and piles of tiny
+// files, detected live by the server. Excluding one adds a rule to the job for
+// its next run.
+
+// The end of a long path says what the folder is.
+function shortPath(path) {
+    const parts = path.split('/');
+    return parts.length > 4 ? '\u2026/' + parts.slice(-3).join('/') : path;
+}
 
 function suspectRow(runId, excluded, suspect) {
     const row = document.createElement('div');
@@ -9,10 +16,11 @@ function suspectRow(runId, excluded, suspect) {
     info.className = 'flex-grow-1 text-truncate';
     const path = document.createElement('code');
     path.className = 'suspect-path';
-    path.textContent = suspect.path;
+    path.dataset.path = suspect.path;
+    path.textContent = shortPath(suspect.path);
     path.title = suspect.path;
     const meta = document.createElement('small');
-    meta.className = 'suspect-meta text-muted ms-2';
+    meta.className = 'suspect-meta text-muted d-block';
     info.append(path, meta);
 
     const button = document.createElement('button');
@@ -49,8 +57,8 @@ function suspectRow(runId, excluded, suspect) {
 
 function updateSuspectRow(row, suspect) {
     row.querySelector('.suspect-meta').textContent =
-        suspect.files.toLocaleString() + ' files · avg ' +
-        formatBytes(suspect.avg_bytes) + ' · ' + formatBytes(suspect.bytes) + ' total';
+        (suspect.known ? 'Cache or generated folder · ' : 'Mostly tiny files · ') +
+        suspect.files.toLocaleString() + '+ files seen · avg ' + formatBytes(suspect.avg_bytes);
 }
 
 window.addEventListener('rclone-stats', function(e) {
@@ -71,7 +79,7 @@ window.addEventListener('rclone-stats', function(e) {
         // Update rows in place so a button under the cursor isn't rebuilt mid-click.
         const existing = new Map();
         list.querySelectorAll('.suspect-item').forEach(row =>
-            existing.set(row.querySelector('.suspect-path').textContent, row));
+            existing.set(row.querySelector('.suspect-path').dataset.path, row));
         const wanted = new Set(suspects.map(s => s.path));
         existing.forEach((row, path) => { if (!wanted.has(path)) row.remove(); });
         suspects.forEach(suspect => {

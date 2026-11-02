@@ -4,7 +4,7 @@ from app.services import remotes as remote_setup
 
 settings_bp = Blueprint("settings", __name__)
 
-_setup_jobs = remote_setup.SetupJobs()
+_sign_ins = remote_setup.SignIns()
 
 
 @settings_bp.route("/")
@@ -60,8 +60,16 @@ def new_remote():
         error = None
     except Exception as exc:
         types, existing, error = [], [], f"Could not reach rclone: {exc}"
+    categories = [
+        (category, [t for t in types if t["category"] == category])
+        for category in remote_setup.CATEGORY_ORDER
+    ]
     return render_template(
-        "remotes/new.html", types=types, existing=existing, error=error
+        "remotes/new.html",
+        types=types,
+        categories=categories,
+        existing=existing,
+        error=error,
     )
 
 
@@ -88,6 +96,9 @@ def create_remote():
             "Remote names can use letters, numbers, spaces and _ . + @ - "
             "(not starting with - or a space)."
         )
+
+    # A sign-in left waiting holds its remote's name and rclone's redirect port.
+    _sign_ins.cancel_active()
 
     try:
         provider = next(
@@ -122,42 +133,65 @@ def create_remote():
         return _error("Fill in: " + ", ".join(missing))
 
     token = None
-    browser = False
-    if detail["oauth"]:
-        pasted = str(data.get("token") or "").strip()
-        browser = bool(data.get("browser")) and current_app.config["DESKTOP_MODE"]
-        if pasted:
-            try:
-                token = remote_setup.extract_token(pasted)
-            except remote_setup.RemoteSetupError as exc:
-                return _error(str(exc))
-        elif not browser:
-            return _error(
-                f"{detail['description']} needs a sign-in. Run "
-                f'rclone authorize "{detail["name"]}" on a computer with a browser '
-                "and paste what it prints."
-            )
-
-    if browser and not token:
-        job_id = _setup_jobs.start(rclone, name, detail["name"], parameters)
-        return jsonify(pending=job_id), 202
+    pasted = str(data.get("token") or "").strip()
+    if pasted:
+        try:
+            token = remote_setup.extract_token(pasted)
+        except remote_setup.RemoteSetupError as exc:
+            return _error(str(exc))
 
     try:
         remote_setup.create_remote(rclone, name, detail["name"], parameters, token=token)
+    except remote_setup.SignInNeeded as pending:
+        try:
+            job_id = _sign_ins.start(
+                rclone,
+                current_app.config["RCLONE_BINARY"],
+                name,
+                detail["name"],
+                pending,
+                open_browser=current_app.config["DESKTOP_MODE"],
+            )
+        except remote_setup.RemoteSetupError as exc:
+            return _error(str(exc))
+        return jsonify(pending=job_id), 202
     except remote_setup.RemoteSetupError as exc:
         return _error(str(exc))
     except Exception as exc:
         return _error(f"rclone reported an error: {exc}", 502)
 
-    flash(f"Remote '{name}' added.", "success")
+    _flash_added(name, remote_setup.check_remote(rclone, name))
     return jsonify(name=name)
+
+
+def _flash_added(name, problem):
+    if problem:
+        flash(f"Remote '{name}' added, but listing it failed: {problem}", "warning")
+    else:
+        flash(f"Remote '{name}' added and working.", "success")
 
 
 @settings_bp.route("/remotes/status/<job_id>")
 def remote_status(job_id):
-    job = _setup_jobs.status(job_id)
+    job = _sign_ins.status(job_id)
     if job is None:
         return _error("Unknown setup.", 404)
     if job["state"] == "done":
-        flash(f"Remote '{job['name']}' added.", "success")
+        _flash_added(job["name"], job["warning"])
     return jsonify(job)
+
+
+@settings_bp.route("/remotes/finish/<job_id>", methods=["POST"])
+def remote_finish(job_id):
+    data = request.get_json(silent=True) or {}
+    try:
+        _sign_ins.finish(job_id, str(data.get("url") or ""))
+    except remote_setup.RemoteSetupError as exc:
+        return _error(str(exc))
+    return jsonify(ok=True)
+
+
+@settings_bp.route("/remotes/cancel/<job_id>", methods=["POST"])
+def remote_cancel(job_id):
+    _sign_ins.cancel(job_id)
+    return jsonify(ok=True)

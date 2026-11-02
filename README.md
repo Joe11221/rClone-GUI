@@ -88,7 +88,9 @@ to rclone; every operation goes through the **rclone RC HTTP API**.
   `max_retries` (default 3). Each retry is a new history record linked via
   `retry_of_run_id`. User-stopped runs are never auto-resumed. A manual
   Resume button is available on failed/interrupted runs.
-- **Settings** — configured remotes list and a global bandwidth limit.
+- **Settings** — configured remotes list, guided setup for all of rclone's
+  storage types (with browser sign-in for Google Drive, OneDrive, Dropbox, ...)
+  and a global bandwidth limit.
 - **Themes** — eight colour themes (dark and light) from the **Theme** menu in
   the navigation bar. The choice is stored in your browser, so each browser
   picks its own.

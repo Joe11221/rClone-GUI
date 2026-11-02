@@ -138,7 +138,15 @@ class JobRunner:
             run = db.session.get(RunHistory, run_id)
             if run:
                 self.collect_errors(run)
+                self._note_active_transfers(run)
         self.suspects.prune(self._active_runs)
+
+    def _note_active_transfers(self, run):
+        try:
+            stats = self.rclone.get_stats(group=run.stats_group)
+            self.suspects.observe_active(run.id, stats.get("transferring"))
+        except Exception as exc:
+            logger.debug("No live stats for Run #%d: %s", run.id, exc)
 
     def check_and_update_runs(self):
         for run_id, rclone_jobid in list(self._active_runs.items()):

@@ -10,10 +10,16 @@ class RcloneClient:
         if user and password:
             self.session.auth = (user, password)
 
-    def _call(self, endpoint, params=None):
+    def _call(self, endpoint, params=None, timeout=None):
         url = f"{self.base_url}/{endpoint}"
-        resp = self.session.post(url, json=params or {})
-        resp.raise_for_status()
+        resp = self.session.post(url, json=params or {}, timeout=timeout)
+        if not resp.ok:
+            # rclone explains failures in the body; the status line says nothing.
+            try:
+                message = resp.json()["error"]
+            except (ValueError, KeyError, TypeError):
+                resp.raise_for_status()
+            raise requests.HTTPError(message, response=resp)
         return resp.json()
 
     # --- Sync operations (always async) ---
@@ -137,8 +143,9 @@ class RcloneClient:
             {"fs": fs, "remote": remote, "opt": {"recurse": recurse}},
         )
 
-    def list_dirs(self, fs, remote=""):
+    def list_dirs(self, fs, remote="", timeout=None):
         return self._call(
             "operations/list",
             {"fs": fs, "remote": remote, "opt": {"recurse": False, "dirsOnly": True}},
+            timeout=timeout,
         )
