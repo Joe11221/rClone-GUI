@@ -1,4 +1,4 @@
-"""Regenerate desktop/assets/icon.ico. Run from the repo root."""
+"""Regenerate desktop/assets/icon.ico and the web favicons. Run from the repo root."""
 
 from pathlib import Path
 
@@ -30,6 +30,10 @@ draw.rectangle(scaled(114, 124, 142, 164), fill=BACKGROUND)
 
 output = Path("desktop/assets/icon.ico")
 output.parent.mkdir(exist_ok=True)
-image.resize((256, 256), Image.LANCZOS).save(
-    output, sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
-)
+icon = image.resize((256, 256), Image.LANCZOS)
+icon.save(output, sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+
+# The web UI's favicons. app/static/favicon.svg is the same drawing, by hand.
+static = Path("app/static")
+icon.save(static / "favicon.ico", sizes=[(16, 16), (32, 32), (48, 48)])
+icon.resize((180, 180), Image.LANCZOS).save(static / "apple-touch-icon.png")

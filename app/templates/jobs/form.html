@@ -316,7 +316,7 @@ function showStartPicker() {
         </button>`;
     }
     if (!availableRemotes.length) {
-        html += `<div class="text-muted small p-2">{{ 'No remotes configured. Use Configure remotes in the tray menu.' if desktop_mode else 'No remotes configured. Configure them via rclone first.' }}</div>`;
+        html += `<div class="text-muted small p-2">No remotes configured yet. <a href="{{ url_for('settings.new_remote') }}">Add one</a>.</div>`;
     }
     list.innerHTML = html;
     list.querySelectorAll('[data-browse-path]').forEach(btn => {

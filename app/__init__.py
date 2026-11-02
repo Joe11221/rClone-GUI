@@ -193,6 +193,11 @@ def create_app(config_class=Config):
 
     from app.models import Job, RunHistory
 
+    @app.route("/favicon.ico")
+    def favicon():
+        # Browsers ask for this path unprompted, e.g. for a tab with no <head> yet.
+        return app.send_static_file("favicon.ico")
+
     @app.route("/")
     def dashboard():
         jobs = Job.query.order_by(Job.name).all()

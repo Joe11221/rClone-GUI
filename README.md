@@ -215,8 +215,10 @@ Browser <--HTTP/SSE--> Gunicorn (gevent, 1 worker) :8080 <--RC HTTP--> rclone rc
 ```
 
 Both `rclone rcd` and Gunicorn run in a single container, started by
-`entrypoint.sh`. The rclone RC API is unauthenticated and bound to
-`127.0.0.1` inside the container, so only the Flask app can reach it.
+`entrypoint.sh`. The rclone RC API is bound to
+`127.0.0.1` inside the container and protected by a password generated on every
+start, so only the Flask app can reach it. (rclone only allows adding remotes
+through an authenticated API.)
 
 Key design rules:
 
@@ -289,7 +291,8 @@ Windows app adds pywebview, pystray, Pillow and PyInstaller.
   remote credentials.
 - The published port defaults to loopback; widening it is an explicit opt-in
   (`BIND_ADDRESS`).
-- The rclone RC API is bound to loopback inside the container only.
+- The rclone RC API is bound to loopback inside the container only, behind a
+  per-start password.
 
 Found a security problem? Please open an issue (or contact the maintainer
 privately for anything sensitive).

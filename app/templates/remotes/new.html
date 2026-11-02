@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Add Remote - rClone GUI{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <h4 class="mb-3"><i class="bi bi-cloud-plus"></i> Add Remote</h4>
+
+        {% if error %}
+        <div class="alert alert-danger">{{ error }}</div>
+        {% else %}
+        <div class="card mb-3">
+            <div class="card-header">1. Storage type</div>
+            <div class="card-body">
+                <label for="type-search" class="form-label">Search all {{ types|length }} types</label>
+                <input type="text" class="form-control" id="type-search" list="type-list"
+                       placeholder="e.g. Google Drive, S3, SFTP" autocomplete="off">
+                <datalist id="type-list"></datalist>
+                <div class="d-flex flex-wrap gap-2 mt-3" id="popular-types"></div>
+            </div>
+        </div>
+
+        <form id="remote-form" style="display: none;" autocomplete="off">
+            <div class="card mb-3">
+                <div class="card-header" id="remote-title">2. Details</div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label for="remote-name" class="form-label">Remote name</label>
+                        <input type="text" class="form-control" id="remote-name" required>
+                        <div class="form-text">
+                            How you will refer to it in jobs, e.g. <code>gdrive:Backups</code>.
+                        </div>
+                    </div>
+
+                    <div id="oauth-box" class="mb-3" style="display: none;">
+                        <label class="form-label">Sign in</label>
+                        {% if desktop_mode %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="signin" id="signin-browser" value="browser" checked>
+                            <label class="form-check-label" for="signin-browser">
+                                Sign in with my browser
+                                <small class="text-muted d-block">rclone opens a sign-in page; come back here when you have approved it.</small>
+                            </label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="signin" id="signin-token" value="token">
+                            <label class="form-check-label" for="signin-token">I already have a token</label>
+                        </div>
+                        {% endif %}
+                        <div id="token-box"{% if desktop_mode %} style="display: none;"{% endif %}>
+                            <textarea class="form-control font-monospace" id="remote-token" rows="3"
+                                      placeholder='Paste the output of rclone authorize'></textarea>
+                            <div class="form-text">
+                                On a computer with a browser, run
+                                <code id="authorize-command">rclone authorize</code>,
+                                sign in, and paste everything it prints.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="basic-options"></div>
+
+                    <div id="advanced-wrap" style="display: none;">
+                        <button type="button" class="btn btn-sm btn-outline-secondary mb-3"
+                                data-bs-toggle="collapse" data-bs-target="#advanced-options">
+                            <i class="bi bi-sliders"></i> Advanced options
+                        </button>
+                        <div class="collapse" id="advanced-options"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="alert alert-danger" id="remote-error" style="display: none;"></div>
+            <div class="alert alert-info" id="remote-waiting" style="display: none;">
+                <span class="spinner-border spinner-border-sm me-2"></span>
+                Waiting for you to sign in in the browser window rclone opened&hellip;
+            </div>
+
+            <div class="d-flex justify-content-between">
+                <a href="{{ url_for('settings.index') }}" class="btn btn-outline-secondary">Cancel</a>
+                <button type="submit" class="btn btn-success" id="remote-submit">
+                    <i class="bi bi-check-lg"></i> Create remote
+                </button>
+            </div>
+        </form>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if not error %}
+<script>
+const remoteTypes = {{ types | tojson }};
+const existingRemotes = {{ existing | tojson }};
+const desktopMode = {{ desktop_mode | tojson }};
+</script>
+<script src="{{ url_for('static', filename='js/remotes.js') }}"></script>
+{% endif %}
+{% endblock %}

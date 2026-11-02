@@ -90,6 +90,45 @@ class RcloneClient:
     def get_remote_config(self, name):
         return self._call("config/get", {"name": name})
 
+    def list_providers(self):
+        """Every storage type rclone supports, with its configuration options."""
+        return self._call("config/providers")
+
+    def create_remote(self, name, remote_type, parameters):
+        """Start creating a remote.
+
+        Non-interactive: if rclone has a question (OAuth, shared drives, ...) it
+        comes back as a state to answer with :meth:`update_remote`.
+        """
+        return self._call(
+            "config/create",
+            {
+                "name": name,
+                "type": remote_type,
+                "parameters": parameters,
+                "opt": {"obscure": True, "nonInteractive": True},
+            },
+        )
+
+    def update_remote(self, name, state, result):
+        """Answer the question rclone asked in ``state``."""
+        return self._call(
+            "config/update",
+            {
+                "name": name,
+                "parameters": {},
+                "opt": {
+                    "nonInteractive": True,
+                    "continue": True,
+                    "state": state,
+                    "result": result,
+                },
+            },
+        )
+
+    def delete_remote(self, name):
+        return self._call("config/delete", {"name": name})
+
     # --- File operations ---
 
     def list_files(self, fs, remote="", recurse=False):
