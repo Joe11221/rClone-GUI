@@ -1588,3 +1588,52 @@ code {
     overflow-y: auto;
     padding-right: 0.25rem;
 }
+
+
+/* ---------- Bandwidth rules ---------- */
+
+.bw-rule {
+    background: var(--app-surface-2);
+    border: 1px solid var(--app-border);
+    border-radius: 0.6rem;
+    padding: 1rem;
+}
+
+.bw-rule.is-off > :not(:first-child),
+.bw-rule.is-off .bw-summary {
+    opacity: 0.55;
+}
+
+.bw-time-fields .form-control {
+    width: 8.5rem;
+}
+
+.bw-grid {
+    display: grid;
+    grid-template-columns: 2.25rem repeat(48, minmax(0, 1fr));
+    gap: 1px;
+    align-items: center;
+}
+
+.bw-tick {
+    grid-column: span 12;
+    font-size: 0.65rem;
+    color: var(--app-muted);
+}
+
+.bw-day-label {
+    font-size: 0.7rem;
+    color: var(--app-muted);
+}
+
+.bw-cell {
+    height: 0.9rem;
+    background: var(--app-surface-2);
+    border: 1px solid var(--app-border);
+    border-radius: 2px;
+}
+
+.bw-cell.limited {
+    background: var(--app-accent);
+    border-color: var(--app-accent);
+}

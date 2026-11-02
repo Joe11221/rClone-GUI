@@ -5,7 +5,7 @@
 <h4 class="mb-3"><i class="bi bi-gear"></i> Settings</h4>
 
 <div class="row">
-    <div class="col-lg-6 mb-3">
+    <div class="col-12 mb-3">
         <div class="card">
             <div class="card-header">rClone Connection</div>
             <div class="card-body">
@@ -25,16 +25,38 @@
         </div>
     </div>
 
-    <div class="col-lg-6 mb-3">
+    <div class="col-12 mb-3">
         <div class="card">
-            <div class="card-header">Bandwidth Limit</div>
+            <div class="card-header"><i class="bi bi-speedometer2"></i> Bandwidth Limits</div>
             <div class="card-body">
-                <form action="{{ url_for('settings.set_bwlimit') }}" method="post" class="d-flex gap-2">
-                    <input type="text" class="form-control" name="rate" placeholder="e.g., 10M or off"
-                           value="">
-                    <button type="submit" class="btn btn-primary">Set</button>
+                <p class="text-muted small mb-2">
+                    Cap the transfer speed on chosen days and times, for everything or for particular remotes.
+                    A limit on “All remotes” also covers remotes you add later. Individual jobs can have their
+                    own limits too, on the job's edit page.
+                </p>
+                <p class="small mb-3" id="bandwidth-now">
+                    {% if bandwidth_now %}
+                        <span class="badge bg-warning text-dark">Limit active now</span> {{ bandwidth_now }}
+                    {% else %}
+                        <span class="badge bg-secondary">No limit active</span>
+                        <span class="text-muted">Limits for specific remotes or jobs apply while a matching job is running.</span>
+                    {% endif %}
+                </p>
+                <form action="{{ url_for('settings.save_bandwidth') }}" method="post">
+                    {% with bw_rules=bandwidth_rules, bw_scoped=true, bw_remotes=remotes %}
+                        {% include "partials/bandwidth_editor.html" %}
+                    {% endwith %}
+                    <div class="mt-4">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg"></i> Save limits
+                        </button>
+                    </div>
                 </form>
-                <div class="form-text mt-2">Set global bandwidth limit. Use "off" for unlimited.</div>
+                <div class="form-text mt-3">
+                    Where several rules apply at once, the lowest limit wins. rclone shares one speed limit
+                    between everything it is doing, so while jobs run together they all share the lowest limit
+                    that applies to any of them.
+                </div>
             </div>
         </div>
     </div>
@@ -70,4 +92,8 @@
         {% endif %}
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/bandwidth.js') }}"></script>
 {% endblock %}

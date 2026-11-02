@@ -50,9 +50,13 @@ def test_compare_methods_map_to_rclone_keys():
 
 
 def test_optional_flags():
-    cfg = make_job(fast_list=True, bwlimit="10M").to_rclone_config()
-    assert cfg["FastList"] is True
-    assert cfg["BwLimit"] == "10M"
+    assert make_job(fast_list=True).to_rclone_config()["FastList"] is True
+
+
+def test_bandwidth_is_never_sent_per_job():
+    # rclone ignores a per-call BwLimit; limits go through core/bwlimit instead.
+    cfg = make_job(bwlimit="10M").to_rclone_config()
+    assert "BwLimit" not in cfg
 
 
 def test_extra_flags_are_merged():

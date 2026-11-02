@@ -14,8 +14,9 @@ class JobAlreadyRunning(Exception):
 
 
 class JobRunner:
-    def __init__(self, rclone_client):
+    def __init__(self, rclone_client, bandwidth=None):
         self.rclone = rclone_client
+        self.bandwidth = bandwidth  # BandwidthController; None = no limits
         self._active_runs = {}  # {run_history_id: rclone_jobid}
         self._pending_retries = set()  # run_ids awaiting delayed retry
         self.suspects = SuspectTracker()
@@ -51,6 +52,7 @@ class JobRunner:
         }
 
         fn = dispatch[job.sync_type]
+        self._update_bandwidth(starting=job)
         result = fn(
             src_fs=job.source,
             dst_fs=job.destination,
@@ -64,6 +66,10 @@ class JobRunner:
 
         self._active_runs[run.id] = run.rclone_jobid
         return run
+
+    def _update_bandwidth(self, starting=None):
+        if self.bandwidth:
+            self.bandwidth.reconcile(starting=starting)
 
     def stop_job(self, run):
         if run.rclone_jobid:
@@ -80,6 +86,7 @@ class JobRunner:
         run.finished_at = datetime.utcnow()
         db.session.commit()
         self._active_runs.pop(run.id, None)
+        self._update_bandwidth()
 
     def _parse_rclone_time(self, time_str):
         """Parse an rclone ISO8601 timestamp (e.g. '2025-01-01T12:00:00.123Z')
@@ -197,6 +204,10 @@ class JobRunner:
                         and run.retry_count < job.max_retries
                     ):
                         self._schedule_retry(run, job.retry_delay_seconds)
+
+        # Limits depend on the time of day and on which runs are active, so
+        # this also opens and closes bandwidth windows.
+        self._update_bandwidth()
 
     def restore_active_runs(self):
         """On startup, restore tracking or resume interrupted runs."""
@@ -337,6 +348,7 @@ class JobRunner:
 
         try:
             fn = dispatch[job.sync_type]
+            self._update_bandwidth(starting=job)
             result = fn(
                 src_fs=job.source,
                 dst_fs=job.destination,

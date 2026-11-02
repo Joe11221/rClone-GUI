@@ -15,6 +15,7 @@ from flask import (
 
 from app.extensions import db
 from app.models import Job
+from app.services import bandwidth
 
 jobs_bp = Blueprint("jobs", __name__)
 
@@ -77,6 +78,15 @@ def _parse_compare_method(form):
     return method
 
 
+def _parse_bandwidth_rules(form):
+    """The job form's bandwidth rules: a list of rule values, None if the form
+    didn't include any (leave them alone), or ValueError."""
+    raw = form.get("bandwidth_rules")
+    if raw is None:
+        return None
+    return bandwidth.parse_rules(raw, allow_remote_scope=False)
+
+
 @jobs_bp.route("/")
 def list_jobs():
     jobs = Job.query.order_by(Job.created_at.desc()).all()
@@ -94,6 +104,11 @@ def create_job():
         order_by_field, order_by_direction, order_by_mixed_window = (
             _parse_order_by(request.form)
         )
+        try:
+            rules = _parse_bandwidth_rules(request.form)
+        except ValueError as exc:
+            flash(str(exc), "danger")
+            return redirect(url_for("jobs.create_job"))
         job = Job(
             name=request.form["name"],
             source=request.form["source"],
@@ -102,7 +117,6 @@ def create_job():
             transfers=int(request.form.get("transfers", 4)),
             checkers=int(request.form.get("checkers", 8)),
             fast_list="fast_list" in request.form,
-            bwlimit=request.form.get("bwlimit", ""),
             exclude_patterns=json.dumps(excludes),
             retries=int(request.form.get("retries", 3)),
             order_by_field=order_by_field,
@@ -115,6 +129,8 @@ def create_job():
                 request.form.get("retry_delay_seconds", 60)
             ),
         )
+        if rules:
+            bandwidth.replace_rules(rules, job=job)
         db.session.add(job)
         db.session.commit()
         flash(f"Job '{job.name}' created.", "success")
@@ -129,7 +145,11 @@ def create_job():
     except Exception:
         pass
     return render_template(
-        "jobs/form.html", job=None, remotes=remotes, **_browser_context()
+        "jobs/form.html",
+        job=None,
+        remotes=remotes,
+        bandwidth_rules=[],
+        **_browser_context(),
     )
 
 
@@ -145,6 +165,11 @@ def edit_job(job_id):
         order_by_field, order_by_direction, order_by_mixed_window = (
             _parse_order_by(request.form)
         )
+        try:
+            rules = _parse_bandwidth_rules(request.form)
+        except ValueError as exc:
+            flash(str(exc), "danger")
+            return redirect(url_for("jobs.edit_job", job_id=job.id))
         job.name = request.form["name"]
         job.source = request.form["source"]
         job.destination = request.form["destination"]
@@ -152,7 +177,6 @@ def edit_job(job_id):
         job.transfers = int(request.form.get("transfers", 4))
         job.checkers = int(request.form.get("checkers", 8))
         job.fast_list = "fast_list" in request.form
-        job.bwlimit = request.form.get("bwlimit", "")
         job.exclude_patterns = json.dumps(excludes)
         job.retries = int(request.form.get("retries", 3))
         job.order_by_field = order_by_field
@@ -164,7 +188,10 @@ def edit_job(job_id):
         job.retry_delay_seconds = int(
             request.form.get("retry_delay_seconds", 60)
         )
+        if rules is not None:
+            bandwidth.replace_rules(rules, job=job)
         db.session.commit()
+        current_app.config["BANDWIDTH"].reconcile()
         flash(f"Job '{job.name}' updated.", "success")
         return redirect(url_for("jobs.list_jobs"))
 
@@ -176,7 +203,11 @@ def edit_job(job_id):
     except Exception:
         pass
     return render_template(
-        "jobs/form.html", job=job, remotes=remotes, **_browser_context()
+        "jobs/form.html",
+        job=job,
+        remotes=remotes,
+        bandwidth_rules=[bandwidth.rule_to_dict(r) for r in job.bandwidth_rules],
+        **_browser_context(),
     )
 
 

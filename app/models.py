@@ -15,6 +15,8 @@ class Job(db.Model):
     transfers = db.Column(db.Integer, default=4)
     checkers = db.Column(db.Integer, default=8)
     fast_list = db.Column(db.Boolean, default=True)
+    # Legacy free-text limit. rclone ignored it per job; startup converts it
+    # into ``bandwidth_rules``, and nothing reads it afterwards.
     bwlimit = db.Column(db.String(50), default="")
     exclude_patterns = db.Column(db.Text, default="[]")
     retries = db.Column(db.Integer, default=3)
@@ -36,6 +38,12 @@ class Job(db.Model):
     )
     runs = db.relationship(
         "RunHistory", backref="job", lazy="dynamic", cascade="all,delete-orphan"
+    )
+    bandwidth_rules = db.relationship(
+        "BandwidthRule",
+        backref="job",
+        order_by="BandwidthRule.id",
+        cascade="all,delete-orphan",
     )
 
     def get_excludes(self):
@@ -65,8 +73,6 @@ class Job(db.Model):
             config["OrderBy"] = order_by
         if self.fast_list:
             config["FastList"] = True
-        if self.bwlimit:
-            config["BwLimit"] = self.bwlimit
         if self.compare_method == "size_only":
             config["SizeOnly"] = True
         elif self.compare_method == "checksum":
@@ -81,6 +87,39 @@ class Job(db.Model):
         if excludes:
             return {"ExcludeRule": excludes}
         return None
+
+
+class BandwidthRule(db.Model):
+    """A speed cap that applies during a weekly time window.
+
+    ``job_id`` set: applies whenever that job runs. ``job_id`` None: a global
+    rule from Settings, narrowed by ``scope``. Rules only ever lower the speed;
+    where several apply at once the lowest wins.
+    """
+
+    id = db.Column(db.Integer, primary_key=True)
+    job_id = db.Column(
+        db.Integer, db.ForeignKey("job.id"), nullable=True, index=True
+    )
+    enabled = db.Column(db.Boolean, default=True)
+    # Weekdays the window starts on, as "0,1,4" (Monday = 0).
+    days = db.Column(db.String(20), nullable=False, default="0,1,2,3,4,5,6")
+    # Minutes after midnight. Equal values mean all day; an end before the
+    # start runs past midnight into the next day.
+    start_minute = db.Column(db.Integer, nullable=False, default=0)
+    end_minute = db.Column(db.Integer, nullable=False, default=0)
+    limit_value = db.Column(db.Float, nullable=False)
+    limit_unit = db.Column(db.String(8), nullable=False, default="MiB")
+    # Global rules only: everything | all_remotes | remotes (named in ``remotes``).
+    scope = db.Column(db.String(20), nullable=False, default="everything")
+    remotes = db.Column(db.Text, nullable=False, default="[]")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def day_list(self):
+        return [int(d) for d in (self.days or "").split(",") if d != ""]
+
+    def remote_list(self):
+        return json.loads(self.remotes or "[]")
 
 
 class Schedule(db.Model):

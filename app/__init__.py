@@ -7,6 +7,7 @@ from app.config import Config
 from app.extensions import db
 from app.rclone_client import RcloneClient
 from app.security import init_request_guards
+from app.services.bandwidth import BandwidthController, migrate_legacy_limits
 from app.services.job_runner import JobRunner
 from app.services.scheduler_service import SchedulerService
 
@@ -89,8 +90,12 @@ def create_app(config_class=Config):
     )
     app.config["RCLONE_CLIENT"] = rclone
 
+    # Bandwidth rules are applied through rclone's one shared limiter
+    bandwidth = BandwidthController(rclone, tz)
+    app.config["BANDWIDTH"] = bandwidth
+
     # Initialize job runner
-    job_runner = JobRunner(rclone)
+    job_runner = JobRunner(rclone, bandwidth=bandwidth)
     app.config["JOB_RUNNER"] = job_runner
 
     # Initialize scheduler
@@ -143,7 +148,10 @@ def create_app(config_class=Config):
 
     @app.context_processor
     def _inject_desktop_mode():
-        return {"desktop_mode": app.config["DESKTOP_MODE"]}
+        return {
+            "desktop_mode": app.config["DESKTOP_MODE"],
+            "timezone_name": app.config["TIMEZONE"],
+        }
 
     # --- Jinja2 template filters ---
 
@@ -223,7 +231,9 @@ def create_app(config_class=Config):
     with app.app_context():
         db.create_all()
         _ensure_columns()
+        migrate_legacy_limits()
         job_runner.restore_active_runs()
+        bandwidth.reconcile()
         if app.config["BACKGROUND_TASKS_ENABLED"]:
             scheduler_service.start()
 

@@ -1,5 +1,8 @@
 from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, url_for
 
+from app.extensions import db
+from app.models import BandwidthRule
+from app.services import bandwidth
 from app.services import remotes as remote_setup
 
 settings_bp = Blueprint("settings", __name__)
@@ -18,20 +21,35 @@ def index():
         rclone_connected = True
     except Exception:
         pass
+    global_rules = (
+        BandwidthRule.query.filter_by(job_id=None).order_by(BandwidthRule.id).all()
+    )
+    limit = current_app.config["BANDWIDTH"].current()
     return render_template(
-        "settings.html", remotes=remotes, rclone_connected=rclone_connected
+        "settings.html",
+        remotes=remotes,
+        rclone_connected=rclone_connected,
+        bandwidth_rules=[bandwidth.rule_to_dict(r) for r in global_rules],
+        bandwidth_now=bandwidth.describe_rule(limit.rule) if limit else None,
     )
 
 
-@settings_bp.route("/bwlimit", methods=["POST"])
-def set_bwlimit():
-    rclone = current_app.config["RCLONE_CLIENT"]
-    rate = request.form.get("rate", "off")
+@settings_bp.route("/bandwidth", methods=["POST"])
+def save_bandwidth():
     try:
-        result = rclone.set_bwlimit(rate)
-        flash(f"Bandwidth limit set to: {result.get('rate', rate)}", "success")
-    except Exception as e:
-        flash(f"Failed to set bandwidth limit: {e}", "danger")
+        rules = bandwidth.parse_rules(
+            request.form.get("bandwidth_rules"), allow_remote_scope=True
+        )
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("settings.index"))
+    bandwidth.replace_rules(rules)
+    db.session.commit()
+    current_app.config["BANDWIDTH"].reconcile()
+    flash(
+        f"Bandwidth limits saved ({len(rules)} rule{'s' if len(rules) != 1 else ''}).",
+        "success",
+    )
     return redirect(url_for("settings.index"))
 
 

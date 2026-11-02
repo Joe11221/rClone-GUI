@@ -1,0 +1,120 @@
+{#
+  Weekly bandwidth rules, built by static/js/bandwidth.js. On submit the rules
+  go to the server as JSON in the hidden "bandwidth_rules" field.
+
+  Expects: bw_rules (list of rule dicts), bw_scoped (offer "applies to"),
+           bw_remotes (configured remote names).
+#}
+<div class="bw-editor"
+     data-scoped="{{ 1 if bw_scoped else 0 }}"
+     data-rules='{{ bw_rules | tojson }}'
+     data-remotes='{{ bw_remotes | tojson }}'>
+    <input type="hidden" name="bandwidth_rules" class="bw-output">
+
+    <div class="bw-empty text-muted small mb-3">
+        <i class="bi bi-speedometer2 me-1"></i>No limits set. Transfers run at full speed.
+    </div>
+    <div class="bw-rules d-flex flex-column gap-3"></div>
+
+    <div class="bw-error alert alert-danger py-2 small mt-3 mb-0" role="alert" style="display:none"></div>
+
+    <div class="mt-3">
+        <button type="button" class="btn btn-sm btn-outline-primary bw-add">
+            <i class="bi bi-plus-lg"></i> Add rule
+        </button>
+    </div>
+
+    <div class="bw-overview mt-4" style="display:none">
+        <div class="small text-muted mb-1">
+            Week at a glance <span class="opacity-75">(times in {{ timezone_name }}; shaded = a limit applies)</span>
+        </div>
+        <div class="bw-grid" aria-hidden="true"></div>
+    </div>
+
+    <template class="bw-template">
+        <div class="bw-rule">
+            <div class="d-flex align-items-center gap-2 mb-3">
+                <div class="form-check form-switch mb-0">
+                    <input type="checkbox" class="form-check-input bw-enabled" checked
+                           title="Turn this rule on or off">
+                </div>
+                <span class="bw-summary fw-semibold small"></span>
+                <button type="button" class="btn btn-sm btn-outline-danger ms-auto bw-remove"
+                        title="Remove this rule">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </div>
+
+            <div class="row g-3">
+                <div class="col-12">
+                    <label class="form-label small text-muted mb-1">Days</label>
+                    <div class="d-flex flex-wrap align-items-center gap-2">
+                        <div class="btn-group btn-group-sm" role="group" aria-label="Days of the week">
+                            <button type="button" class="btn btn-outline-primary bw-day" data-day="0">Mon</button>
+                            <button type="button" class="btn btn-outline-primary bw-day" data-day="1">Tue</button>
+                            <button type="button" class="btn btn-outline-primary bw-day" data-day="2">Wed</button>
+                            <button type="button" class="btn btn-outline-primary bw-day" data-day="3">Thu</button>
+                            <button type="button" class="btn btn-outline-primary bw-day" data-day="4">Fri</button>
+                            <button type="button" class="btn btn-outline-primary bw-day" data-day="5">Sat</button>
+                            <button type="button" class="btn btn-outline-primary bw-day" data-day="6">Sun</button>
+                        </div>
+                        <div class="small">
+                            <button type="button" class="btn btn-link btn-sm p-0 me-2 bw-preset" data-days="0,1,2,3,4,5,6">Every day</button>
+                            <button type="button" class="btn btn-link btn-sm p-0 me-2 bw-preset" data-days="0,1,2,3,4">Weekdays</button>
+                            <button type="button" class="btn btn-link btn-sm p-0 bw-preset" data-days="5,6">Weekends</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-7">
+                    <label class="form-label small text-muted mb-1">Time</label>
+                    <div class="d-flex flex-wrap align-items-center gap-2">
+                        <div class="form-check mb-0 me-2">
+                            <label class="form-check-label small">
+                                <input type="checkbox" class="form-check-input bw-allday"> All day
+                            </label>
+                        </div>
+                        <div class="d-flex align-items-center gap-2 bw-time-fields">
+                            <input type="time" class="form-control form-control-sm bw-start" aria-label="From">
+                            <span class="small text-muted">to</span>
+                            <input type="time" class="form-control form-control-sm bw-end" aria-label="Until">
+                        </div>
+                    </div>
+                    <div class="form-text bw-overnight" style="display:none">
+                        Runs past midnight into the next day.
+                    </div>
+                </div>
+
+                <div class="col-md-5">
+                    <label class="form-label small text-muted mb-1">Limit to</label>
+                    <div class="input-group input-group-sm">
+                        <input type="number" class="form-control bw-value" min="0" step="any"
+                               placeholder="e.g. 10" aria-label="Speed limit">
+                        <select class="form-select bw-unit" aria-label="Unit">
+                            <option value="KiB">KiB/s</option>
+                            <option value="MiB">MiB/s</option>
+                            <option value="GiB">GiB/s</option>
+                            <option value="Mbit">Mbit/s</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="col-12 bw-scope-row">
+                    <label class="form-label small text-muted mb-1">Applies to</label>
+                    <select class="form-select form-select-sm bw-scope" aria-label="Applies to">
+                        <option value="everything">All transfers</option>
+                        <option value="all_remotes">All remotes (including ones added later)</option>
+                        <option value="remotes">Only specific remotes…</option>
+                    </select>
+                    <div class="bw-remotes-box mt-2" style="display:none">
+                        <div class="bw-remote-list d-flex flex-wrap gap-3"></div>
+                        <div class="form-text bw-no-remotes" style="display:none">
+                            No remotes are configured yet.
+                            <a href="{{ url_for('settings.new_remote') }}">Add one</a>.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+</div>

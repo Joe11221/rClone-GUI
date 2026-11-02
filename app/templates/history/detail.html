@@ -145,7 +145,7 @@
                     <tr><td class="text-muted">Transfers</td><td>{{ run.job.transfers }}</td></tr>
                     <tr><td class="text-muted">Checkers</td><td>{{ run.job.checkers }}</td></tr>
                     <tr><td class="text-muted">Fast List</td><td>{{ 'Yes' if run.job.fast_list else 'No' }}</td></tr>
-                    <tr><td class="text-muted">BW Limit</td><td>{{ run.job.bwlimit or 'None' }}</td></tr>
+                    <tr><td class="text-muted">BW Limits</td><td>{{ run.job.bandwidth_rules | length or 'None' }}{{ ' rule(s)' if run.job.bandwidth_rules }}</td></tr>
                 </table>
             </div>
         </div>

@@ -100,23 +100,14 @@
                         </div>
                     </div>
 
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label for="bwlimit" class="form-label">Bandwidth Limit</label>
-                            <input type="text" class="form-control" id="bwlimit" name="bwlimit"
-                                   value="{{ job.bwlimit if job else '' }}"
-                                   placeholder="e.g., 10M or 08:00,5M 23:00,off">
-                            <div class="form-text">Leave empty for unlimited. Supports time-based limits.</div>
-                        </div>
-                        <div class="col-md-6 mb-3 d-flex align-items-end">
-                            <div class="form-check">
-                                <input type="checkbox" class="form-check-input" id="fast_list" name="fast_list"
-                                       {{ 'checked' if (job and job.fast_list) or not job }}>
-                                <label class="form-check-label" for="fast_list">
-                                    Fast List
-                                    <small class="text-muted d-block">Fewer API calls to list remote. Recommended for large remotes.</small>
-                                </label>
-                            </div>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" id="fast_list" name="fast_list"
+                                   {{ 'checked' if (job and job.fast_list) or not job }}>
+                            <label class="form-check-label" for="fast_list">
+                                Fast List
+                                <small class="text-muted d-block">Fewer API calls to list remote. Recommended for large remotes.</small>
+                            </label>
                         </div>
                     </div>
 
@@ -160,6 +151,19 @@
                             <div class="form-text">How rclone decides whether a file needs to be transferred.</div>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header"><i class="bi bi-speedometer2"></i> Bandwidth Limits</div>
+                <div class="card-body">
+                    <p class="text-muted small">
+                        Cap this job's speed on chosen days and times. Leave empty for no job-specific limit.
+                        Limits from Settings also apply, and the lowest one wins.
+                    </p>
+                    {% with bw_rules=bandwidth_rules, bw_scoped=false, bw_remotes=[] %}
+                        {% include "partials/bandwidth_editor.html" %}
+                    {% endwith %}
                 </div>
             </div>
 
@@ -261,6 +265,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/bandwidth.js') }}"></script>
 <script>
 const availableRemotes = {{ remotes | tojson }};
 const isWindows = {{ is_windows | tojson }};

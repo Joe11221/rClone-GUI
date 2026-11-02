@@ -85,6 +85,10 @@ class RcloneClient:
             params["group"] = group
         return self._call("core/transferred", params)
 
+    def get_bwlimit(self):
+        """The limit rclone is applying now (``bytesPerSecond`` is -1 for none)."""
+        return self._call("core/bwlimit")
+
     def set_bwlimit(self, rate):
         return self._call("core/bwlimit", {"rate": rate})
 

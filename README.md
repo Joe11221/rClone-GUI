@@ -61,7 +61,7 @@ to rclone; every operation goes through the **rclone RC HTTP API**.
 ## Features
 
 - **Jobs** — CRUD for sync/copy/move jobs with source/destination (local
-  paths or remotes), exclude patterns, extra flags, per-job bandwidth, and
+  paths or remotes), exclude patterns, extra flags, per-job bandwidth rules, and
   `--order-by` composition (field `size`/`name`/`modtime`, direction
   `asc`/`desc`/`mixed` with a window %). The default, **size + mixed**, keeps
   small and large files moving at the same time — see
@@ -90,7 +90,16 @@ to rclone; every operation goes through the **rclone RC HTTP API**.
   Resume button is available on failed/interrupted runs.
 - **Settings** — configured remotes list, guided setup for all of rclone's
   storage types (with browser sign-in for Google Drive, OneDrive, Dropbox, ...)
-  and a global bandwidth limit.
+  and global bandwidth limits.
+- **Bandwidth limits** — any number of weekly rules, each with days, a time
+  window (overnight windows work), and a speed in KiB/s, MiB/s, GiB/s or
+  Mbit/s. Set them per job (job edit page) or globally (Settings), where a rule
+  can apply to everything, to all remotes — including remotes added later — or
+  to specific remotes. A job counts as using a remote if its source or
+  destination is on it. Where rules overlap, the lowest limit wins. rclone has a
+  single speed limiter shared by all its transfers, so the app sets it as runs
+  start and stop and as windows open and close; jobs running at the same time
+  share the lowest limit that applies to any of them. Times use `TIMEZONE`.
 - **Themes** — eight colour themes (dark and light) from the **Theme** menu in
   the navigation bar. The choice is stored in your browser, so each browser
   picks its own.
@@ -265,7 +274,7 @@ app/
 │   ├── history.py        # Past run list + detail view
 │   ├── run_errors.py     # Per-run failure list (JSON, paged), summary, CSV export
 │   ├── sse.py            # SSE endpoint — polls rclone directly (no bg thread)
-│   └── settings.py       # Remotes list, global bandwidth limit
+│   └── settings.py       # Remotes list, global bandwidth rules
 ├── services/
 │   ├── job_runner.py     # Core orchestration: start/stop jobs, finalize runs
 │   ├── run_errors.py     # Turns rclone transfer errors into stored, grouped failures

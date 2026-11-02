@@ -32,6 +32,15 @@ class FakeRclone:
 
     def __init__(self):
         self.calls = []
+        self.bytes_per_second = -1  # what rclone's limiter is set to
+
+    def get_bwlimit(self):
+        return {"bytesPerSecond": self.bytes_per_second}
+
+    def set_bwlimit(self, rate):
+        self.calls.append(("bwlimit", rate))
+        self.bytes_per_second = -1 if rate == "off" else int(rate.rstrip("b"))
+        return {"rate": rate}
 
     def _start(self, kind, **kwargs):
         self.calls.append((kind, kwargs))
@@ -58,4 +67,5 @@ def fake_rclone(app):
     fake = FakeRclone()
     app.config["RCLONE_CLIENT"] = fake
     app.config["JOB_RUNNER"].rclone = fake
+    app.config["BANDWIDTH"].rclone = fake
     return fake
