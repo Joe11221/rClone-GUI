@@ -2,12 +2,12 @@
 {% block title %}Settings - rClone GUI{% endblock %}
 
 {% block content %}
-<h4 class="mb-3"><i class="bi bi-gear"></i> Settings</h4>
+<h1 class="h4 mb-3"><i class="bi bi-gear"></i> Settings</h1>
 
 <div class="row">
     <div class="col-12 mb-3">
         <div class="card">
-            <div class="card-header">rClone Connection</div>
+            <div class="card-header"><h2 class="h6 mb-0">rClone Connection</h2></div>
             <div class="card-body">
                 <table class="table table-borderless mb-0">
                     <tr>
@@ -28,7 +28,7 @@
     {% if auth_mode == 'password' %}
     <div class="col-12 mb-3">
         <div class="card">
-            <div class="card-header"><i class="bi bi-shield-lock"></i> Password</div>
+            <div class="card-header"><h2 class="h6 mb-0"><i class="bi bi-shield-lock"></i> Password</h2></div>
             <div class="card-body">
                 <form action="{{ url_for('auth.change_password') }}" method="post" class="row g-3">
                     <div class="col-md-4">
@@ -58,7 +58,7 @@
 
     <div class="col-12 mb-3">
         <div class="card">
-            <div class="card-header"><i class="bi bi-speedometer2"></i> Bandwidth Limits</div>
+            <div class="card-header"><h2 class="h6 mb-0"><i class="bi bi-speedometer2"></i> Bandwidth Limits</h2></div>
             <div class="card-body">
                 <p class="text-muted small mb-2">
                     Cap the transfer speed on chosen days and times, for everything or for particular remotes.
@@ -89,9 +89,9 @@
 
     <div class="col-12 mb-3">
         <div class="card">
-            <div class="card-header"><i class="bi bi-bell"></i> Notifications</div>
+            <div class="card-header"><h2 class="h6 mb-0"><i class="bi bi-bell"></i> Notifications</h2></div>
             <div class="card-body">
-                <form action="{{ url_for('settings.save_notifications') }}" method="post">
+                <form action="{{ url_for('settings.save_notifications') }}" method="post" id="notify-form">
                     <div class="mb-3">
                         <label for="notify_urls" class="form-label">Notification URLs (one per line)</label>
                         <textarea class="form-control font-monospace" id="notify_urls" name="notify_urls" rows="4"
@@ -145,12 +145,20 @@
                                    name="heartbeat_minutes" value="{{ heartbeat_minutes }}">
                         </div>
                     </div>
-                    <button type="submit" class="btn btn-primary">Save</button>
-                    <button type="submit" class="btn btn-outline-secondary ms-2"
-                            formaction="{{ url_for('settings.test_notifications') }}">
-                        <i class="bi bi-send"></i> Send test notification
-                    </button>
                 </form>
+                {# Outside the save form, so testing never saves the other fields. Save is linked by its form attribute. #}
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <button type="submit" form="notify-form" class="btn btn-primary">Save</button>
+                    <form id="notify-test-form" action="{{ url_for('settings.test_notifications') }}" method="post" class="d-inline">
+                        <input type="hidden" name="notify_urls" id="notify-test-urls" value="">
+                        <button type="submit" class="btn btn-outline-secondary">
+                            <i class="bi bi-send"></i> Send test notification
+                        </button>
+                    </form>
+                </div>
+                <div class="form-text">
+                    The test uses the URLs in the box above, or the saved ones if the box is empty. Unsaved changes are not saved.
+                </div>
             </div>
         </div>
     </div>
@@ -158,7 +166,7 @@
 
 <div class="card">
     <div class="card-header d-flex justify-content-between align-items-center">
-        <span>Configured Remotes</span>
+        <h2 class="h6 mb-0">Configured Remotes</h2>
         {% if rclone_connected %}
         <a href="{{ url_for('settings.new_remote') }}" class="btn btn-sm btn-primary">
             <i class="bi bi-plus-lg"></i> Add remote
@@ -171,12 +179,25 @@
             <thead>
                 <tr>
                     <th>Remote Name</th>
+                    <th><span class="visually-hidden">Actions</span></th>
                 </tr>
             </thead>
             <tbody>
                 {% for remote in remotes %}
                 <tr>
-                    <td><i class="bi bi-cloud"></i> {{ remote }}</td>
+                    <td><i class="bi bi-cloud"></i> <span class="font-monospace">{{ remote }}</span></td>
+                    <td class="text-end">
+                        {# Deleting only removes the remote from rclone's config; the files on it stay. #}
+                        <form action="{{ url_for('settings.delete_remote') }}" method="post" class="d-inline"
+                              data-confirm="Delete remote '{{ remote }}'? Jobs that use it will fail until you add it again. Files on the remote are not touched."
+                              data-confirm-label="Delete remote">
+                            <input type="hidden" name="name" value="{{ remote }}">
+                            <button type="submit" class="btn btn-sm btn-outline-danger"
+                                    aria-label="Delete remote {{ remote }}" title="Delete remote {{ remote }}">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </form>
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -190,4 +211,10 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/bandwidth.js') }}"></script>
+<script>
+    // The test sends whatever is typed in the URL box, so copy it across just before the test is sent.
+    document.getElementById('notify-test-form').addEventListener('submit', function () {
+        document.getElementById('notify-test-urls').value = document.getElementById('notify_urls').value;
+    });
+</script>
 {% endblock %}

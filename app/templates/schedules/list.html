@@ -3,29 +3,35 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h4><i class="bi bi-clock-history"></i> Schedules</h4>
-    <a href="{{ url_for('schedules.create_schedule') }}" class="btn btn-success">
+    <h1 class="h4 mb-0"><i class="bi bi-clock-history"></i> Schedules</h1>
+    <a href="{{ url_for('schedules.create_schedule') }}" class="btn btn-primary">
         <i class="bi bi-plus-lg"></i> New Schedule
     </a>
 </div>
 
 {% if schedules %}
 <div class="table-responsive">
-    <table class="table table-hover">
+    <table class="table table-hover align-middle">
         <thead>
             <tr>
                 <th>Job</th>
-                <th>Cron Expression</th>
+                <th>When</th>
                 <th>Status</th>
-                <th>Next Run</th>
+                <th>Next Run <span class="text-muted fw-normal small">({{ timezone_name }})</span></th>
                 <th>Actions</th>
             </tr>
         </thead>
         <tbody>
             {% for sched in schedules %}
+            {% set words = sched.cron_expression | cron_text %}
             <tr>
                 <td><strong>{{ sched.job.name }}</strong></td>
-                <td><code>{{ sched.cron_expression }}</code></td>
+                <td>
+                    {{ words }}
+                    {% if words != sched.cron_expression %}
+                    <div class="small text-muted"><code>{{ sched.cron_expression }}</code></div>
+                    {% endif %}
+                </td>
                 <td>
                     {% if sched.enabled %}
                         <span class="badge bg-success">Enabled</span>
@@ -35,24 +41,27 @@
                 </td>
                 <td>
                     {% if sched.next_run %}
-                        {{ sched.next_run.strftime('%Y-%m-%d %H:%M') }}
+                        {{ sched.next_run | local_time }}
                     {% else %}
-                        <span class="text-muted">--</span>
+                        <span class="text-muted">{{ 'Not scheduled' if not sched.enabled else '--' }}</span>
                     {% endif %}
                 </td>
                 <td>
                     <div class="d-flex gap-2 action-buttons">
                         <form action="{{ url_for('schedules.toggle_schedule', schedule_id=sched.id) }}" method="post" class="d-inline">
-                            <button type="submit" class="btn btn-sm btn-outline-{{ 'warning' if sched.enabled else 'success' }}" title="{{ 'Disable' if sched.enabled else 'Enable' }}">
+                            <button type="submit" class="btn btn-sm btn-outline-secondary" title="{{ 'Disable' if sched.enabled else 'Enable' }}"
+                                    aria-label="{{ 'Disable' if sched.enabled else 'Enable' }} schedule for {{ sched.job.name }}">
                                 <i class="bi bi-{{ 'pause-fill' if sched.enabled else 'play-fill' }}"></i>
+                                <span class="d-none d-md-inline">{{ 'Disable' if sched.enabled else 'Enable' }}</span>
                             </button>
                         </form>
-                        <a href="{{ url_for('schedules.edit_schedule', schedule_id=sched.id) }}" class="btn btn-sm btn-outline-primary" title="Edit">
+                        <a href="{{ url_for('schedules.edit_schedule', schedule_id=sched.id) }}" class="btn btn-sm btn-outline-secondary" title="Edit" aria-label="Edit schedule for {{ sched.job.name }}">
                             <i class="bi bi-pencil"></i>
                         </a>
                         <form action="{{ url_for('schedules.delete_schedule', schedule_id=sched.id) }}" method="post" class="d-inline"
-                              data-confirm="Delete this schedule?">
-                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
+                              data-confirm="Delete the schedule for {{ sched.job.name }}? The job stays and can still be started by hand, but it will no longer run on its own."
+                              data-confirm-label="Delete schedule">
+                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete" aria-label="Delete schedule for {{ sched.job.name }}">
                                 <i class="bi bi-trash"></i>
                             </button>
                         </form>
@@ -65,9 +74,9 @@
 </div>
 {% else %}
 <div class="text-center py-5">
-    <i class="bi bi-clock display-1 text-muted"></i>
+    <i class="bi bi-clock display-1 text-muted" aria-hidden="true"></i>
     <p class="text-muted mt-3">No schedules configured.</p>
-    <a href="{{ url_for('schedules.create_schedule') }}" class="btn btn-success">
+    <a href="{{ url_for('schedules.create_schedule') }}" class="btn btn-primary">
         <i class="bi bi-plus-lg"></i> Create a Schedule
     </a>
 </div>

@@ -98,6 +98,10 @@ class RcloneClient:
         """Cheap liveness check."""
         return self._call("rc/noop", timeout=5)
 
+    def version(self):
+        """rclone's own version, e.g. {"version": "v1.68.2"}."""
+        return self._call("core/version", timeout=5)
+
     def list_remotes(self):
         return self._call("config/listremotes")
 
@@ -142,6 +146,10 @@ class RcloneClient:
 
     def delete_remote(self, name):
         return self._call("config/delete", {"name": name})
+
+    def options_info(self):
+        """Every option rclone knows, grouped by block (e.g. "main")."""
+        return self._call("options/info")
 
     # --- File operations ---
 

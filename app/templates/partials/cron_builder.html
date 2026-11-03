@@ -1,0 +1,140 @@
+{#
+  Schedule editor: a simple builder (static/js/cronbuilder.js) over a plain cron
+  text input. The input is always what's submitted, so without JavaScript it
+  works as a text field.
+
+  Expects: cron_id (id of the text input), cron_name (its form field name),
+           cron_value, cron_tz.
+  Optional: cron_required (no "manual only" choice), cron_error, cron_help.
+#}
+<div class="cron-builder" data-cron-builder
+     data-allow-empty="{{ 0 if cron_required else 1 }}"
+     data-describe-url="{{ url_for('schedules.describe') }}">
+
+    <div class="cron-mode d-flex flex-wrap align-items-center gap-2 mb-3" data-role="mode" hidden>
+        <span class="small" id="{{ cron_id }}-mode-label">Edit as</span>
+        <div class="btn-group btn-group-sm" role="radiogroup" aria-labelledby="{{ cron_id }}-mode-label">
+            <input type="radio" class="btn-check" name="{{ cron_id }}_mode" id="{{ cron_id }}-mode-simple"
+                   value="simple" autocomplete="off">
+            <label class="btn btn-outline-secondary" for="{{ cron_id }}-mode-simple">Simple</label>
+            <input type="radio" class="btn-check" name="{{ cron_id }}_mode" id="{{ cron_id }}-mode-cron"
+                   value="cron" autocomplete="off">
+            <label class="btn btn-outline-secondary" for="{{ cron_id }}-mode-cron">Cron expression</label>
+        </div>
+    </div>
+
+    <div class="alert alert-info py-2 small" data-role="note" role="status" hidden>
+        <i class="bi bi-info-circle me-1" aria-hidden="true"></i>
+        This schedule is more complex than the simple editor supports. Edit it as a cron expression.
+    </div>
+
+    {# Simple mode: shown by the script, which also fills it from the text input. #}
+    <div class="cron-simple" data-role="simple" hidden>
+        <div class="bw-fields">
+            <div class="bw-field">
+                <label class="bw-label" for="{{ cron_id }}-freq">Run</label>
+                <select class="form-select form-select-sm cron-freq" id="{{ cron_id }}-freq" data-role="freq">
+                    {% if not cron_required %}<option value="manual">Manual only (when I start it)</option>{% endif %}
+                    <option value="minutes">Every few minutes</option>
+                    <option value="hours">Every few hours</option>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                </select>
+            </div>
+
+            <div class="bw-field" data-group="minutes" hidden>
+                <label class="bw-label" for="{{ cron_id }}-every-min">Every</label>
+                <div class="d-flex align-items-center gap-2">
+                    <select class="form-select form-select-sm cron-narrow" id="{{ cron_id }}-every-min" data-role="every-min">
+                        {% for n in (5, 10, 15, 20, 30) %}<option value="{{ n }}">{{ n }}</option>{% endfor %}
+                    </select>
+                    <span class="small text-muted">minutes</span>
+                </div>
+            </div>
+
+            <div class="bw-field" data-group="hours" hidden>
+                <label class="bw-label" for="{{ cron_id }}-every-hours">Every</label>
+                <div class="d-flex align-items-center gap-2">
+                    <select class="form-select form-select-sm cron-narrow" id="{{ cron_id }}-every-hours" data-role="every-hours">
+                        {% for n in (1, 2, 3, 4, 6, 8, 12) %}<option value="{{ n }}">{{ n }}</option>{% endfor %}
+                    </select>
+                    <span class="small text-muted">hours</span>
+                </div>
+            </div>
+
+            <div class="bw-field" data-group="hours" hidden>
+                <label class="bw-label" for="{{ cron_id }}-minute">Minute past the hour</label>
+                <input type="number" class="form-control form-control-sm cron-narrow" id="{{ cron_id }}-minute"
+                       data-role="minute" min="0" max="59" step="1" required inputmode="numeric">
+            </div>
+
+            <div class="bw-field" data-group="monthly" hidden>
+                <label class="bw-label" for="{{ cron_id }}-dom">Day of the month</label>
+                <select class="form-select form-select-sm cron-narrow" id="{{ cron_id }}-dom" data-role="dom">
+                    {% for n in range(1, 32) %}<option value="{{ n }}">{{ n }}</option>{% endfor %}
+                </select>
+            </div>
+
+            <div class="bw-field" data-group="daily weekly monthly" hidden>
+                <label class="bw-label" for="{{ cron_id }}-time">At</label>
+                <input type="time" class="form-control form-control-sm cron-time" id="{{ cron_id }}-time"
+                       data-role="time" required>
+            </div>
+        </div>
+
+        <fieldset class="bw-field mt-2" data-group="weekly" hidden>
+            <legend class="bw-label">Days</legend>
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <div class="cron-days">
+                    {% for key, short, full in (("mon", "Mon", "Monday"), ("tue", "Tue", "Tuesday"),
+                                                ("wed", "Wed", "Wednesday"), ("thu", "Thu", "Thursday"),
+                                                ("fri", "Fri", "Friday"), ("sat", "Sat", "Saturday"),
+                                                ("sun", "Sun", "Sunday")) %}
+                    <input type="checkbox" class="btn-check" id="{{ cron_id }}-day-{{ key }}"
+                           value="{{ key }}" data-role="day" aria-label="{{ full }}" autocomplete="off">
+                    <label class="btn btn-sm btn-outline-primary" for="{{ cron_id }}-day-{{ key }}">{{ short }}</label>
+                    {% endfor %}
+                </div>
+                <div class="small text-nowrap">
+                    <button type="button" class="btn btn-link btn-sm p-0 me-2" data-role="days-preset" data-days="mon,tue,wed,thu,fri">Weekdays</button>
+                    <button type="button" class="btn btn-link btn-sm p-0" data-role="days-preset" data-days="sat,sun">Weekends</button>
+                </div>
+            </div>
+            <div class="small text-danger mt-1" data-role="days-error" role="alert" hidden>Choose at least one day.</div>
+        </fieldset>
+
+        <div class="form-text mt-2" data-role="dom-note" hidden>Months without this day are skipped.</div>
+    </div>
+
+    <div data-role="expr">
+        <label for="{{ cron_id }}" class="form-label">Cron expression</label>
+        <input type="text" class="form-control font-monospace{{ ' is-invalid' if cron_error }}"
+               id="{{ cron_id }}" name="{{ cron_name }}" value="{{ cron_value }}"
+               {% if cron_required %}required {% endif %}autocomplete="off" spellcheck="false"
+               placeholder="min hour dom mon dow, e.g. 0 2 * * *"
+               aria-describedby="{{ cron_id }}_help cron-preview{{ ' ' ~ cron_id ~ '-error' if cron_error }}"
+               {% if cron_error %}aria-invalid="true"{% endif %}>
+        {% if cron_error %}
+        <div class="invalid-feedback d-block" id="{{ cron_id }}-error" role="alert">{{ cron_error }}</div>
+        {% endif %}
+        <div class="form-text" id="{{ cron_id }}_help">
+            {{ cron_help or "Five fields: minute hour day-of-month month day-of-week." }}
+        </div>
+    </div>
+
+    <div class="cron-summary mt-2">
+        <div>
+            <span class="small text-muted">Runs:</span>
+            <span id="cron-preview" aria-live="polite">{% if cron_value and not cron_error %}{{ cron_value | cron_text }}{% endif %}</span>
+        </div>
+        <div class="small" data-role="raw" hidden>
+            <span class="text-muted">Cron expression:</span> <code data-role="raw-code"></code>
+        </div>
+        <div class="small text-muted" data-role="next-wrap" hidden>
+            <span id="{{ cron_id }}-next-label">Next runs</span>
+            <ul class="list-unstyled mb-0 cron-next" data-role="next" aria-labelledby="{{ cron_id }}-next-label"></ul>
+        </div>
+        <div class="form-text">Times are in {{ cron_tz }}.</div>
+    </div>
+</div>

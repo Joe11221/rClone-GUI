@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from datetime import datetime
 
 from flask import (
     Blueprint,
@@ -14,8 +15,10 @@ from flask import (
 )
 
 from app.extensions import db
-from app.models import Job
-from app.services import bandwidth
+from app.models import Job, Schedule
+from app.services import bandwidth, extra_flags
+from app.services.cron_trigger import cron_trigger
+from app.services.job_runner import JobAlreadyRunning
 
 jobs_bp = Blueprint("jobs", __name__)
 
@@ -105,6 +108,234 @@ def _parse_bandwidth_rules(form):
     return bandwidth.parse_rules(raw, allow_remote_scope=False)
 
 
+# Form fields that live inside the collapsed "Advanced rclone options" section,
+# so a validation error on one of them opens it.
+ADVANCED_FIELDS = {"extra_flags"}
+
+_TEXT_FIELDS = (
+    "name", "source", "destination", "sync_type", "transfers", "checkers",
+    "retries", "order_by_field", "order_by_direction", "order_by_mixed_window",
+    "compare_method", "max_delete", "max_age_hours", "max_retries",
+    "retry_delay_seconds", "excludes", "extra_flags", "schedule_cron",
+)
+
+
+def _form_values(job=None, form=None):
+    """What each field on the job form shows: the submitted text after a
+    validation error, else the saved job, else the defaults for a new job."""
+    if form is not None:
+        return {
+            **{k: form.get(k, "") for k in _TEXT_FIELDS},
+            "fast_list": "fast_list" in form,
+            "preview_deletes": "preview_deletes" in form,
+            "auto_resume": "auto_resume" in form,
+            "schedule_enabled": "schedule_enabled" in form,
+        }
+    schedule = job.schedule if job else None
+    return {
+        "name": job.name if job else "",
+        "source": job.source if job else "",
+        "destination": job.destination if job else "",
+        # Copy never deletes anything, so it is the safe thing to start from.
+        "sync_type": job.sync_type if job else "copy",
+        "transfers": job.transfers if job else 4,
+        "checkers": job.checkers if job else 8,
+        "retries": job.retries if job else 3,
+        "fast_list": bool(job.fast_list) if job else True,
+        "order_by_field": (job.order_by_field if job else None) or "size",
+        "order_by_direction": (job.order_by_direction if job else None) or "mixed",
+        "order_by_mixed_window": (
+            job.order_by_mixed_window
+            if job and job.order_by_mixed_window is not None else 50
+        ),
+        "compare_method": (job.compare_method if job else None) or "default",
+        "max_delete": job.max_delete if job and job.max_delete is not None else 1000,
+        "max_age_hours": job.max_age_hours if job and job.max_age_hours else "",
+        "preview_deletes": job.preview_deletes is not False if job else True,
+        "auto_resume": bool(job.auto_resume) if job else False,
+        "max_retries": job.max_retries if job else 3,
+        "retry_delay_seconds": job.retry_delay_seconds if job else 60,
+        "excludes": "\n".join(job.get_excludes()) if job else "",
+        "extra_flags": _saved_flags_text(job),
+        "schedule_cron": schedule.cron_expression if schedule else "",
+        "schedule_enabled": schedule.enabled if schedule else True,
+    }
+
+
+def _saved_flags_text(job):
+    """The job's saved extra options as flag lines."""
+    saved = job.get_extra_flags() if job else {}
+    if not saved:
+        return ""
+    try:
+        options = extra_flags.load_options(current_app.config["RCLONE_CLIENT"])
+    except extra_flags.OptionsUnavailable:
+        options = None
+    return extra_flags.format_flags(saved, options)
+
+
+def _available_remotes():
+    try:
+        rclone = current_app.config["RCLONE_CLIENT"]
+        return rclone.list_remotes().get("remotes", [])
+    except Exception:
+        return []
+
+
+def _render_form(job, values, errors=None, rules=None, status=200):
+    if rules is None:
+        rules = (
+            [bandwidth.rule_to_dict(r) for r in job.bandwidth_rules] if job else []
+        )
+    errors = errors or {}
+    timezone = current_app.config["SCHEDULER_SERVICE"].timezone
+    html = render_template(
+        "jobs/form.html",
+        job=job,
+        f=values,
+        errors=errors,
+        advanced_open=bool(ADVANCED_FIELDS & set(errors)),
+        remotes=_available_remotes(),
+        bandwidth_rules=rules,
+        schedule_tz=str(timezone) if timezone else "the server's local time",
+        **_browser_context(),
+    )
+    return html, status
+
+
+def _parse_extra_flags(form):
+    """(config, errors); config is None to leave the saved flags alone. Fails
+    closed: flags are only stored once rclone has confirmed it knows them."""
+    if "extra_flags" not in form:
+        return None, []
+    text = form["extra_flags"]
+    if not text.strip():
+        return {}, []
+    try:
+        options = extra_flags.load_options(current_app.config["RCLONE_CLIENT"])
+    except extra_flags.OptionsUnavailable:
+        return None, [
+            "rclone isn't reachable, so these options can't be checked and "
+            "weren't saved. Try again once rclone is running, or clear the field."
+        ]
+    return extra_flags.parse(text, options)
+
+
+def _parse_schedule(form):
+    """(cron text, error); cron is None to leave the schedule alone and ""
+    to remove it."""
+    if "schedule_cron" not in form:
+        return None, None
+    cron = " ".join(form["schedule_cron"].split())
+    if not cron:
+        return "", None
+    try:
+        cron_trigger(
+            cron, timezone=current_app.config["SCHEDULER_SERVICE"].timezone
+        )
+    except ValueError:
+        return cron, (
+            "Not a valid cron expression. Use five fields: minute hour "
+            "day-of-month month day-of-week, for example 0 2 * * *."
+        )
+    return cron, None
+
+
+def _apply_schedule(job, cron, enabled):
+    """Create, update or remove the job's schedule the way the Schedules page
+    does, so the APScheduler entry follows. The job is already committed."""
+    if cron is None:
+        return
+    svc = current_app.config["SCHEDULER_SERVICE"]
+    sched = job.schedule
+    if not cron:
+        if sched:
+            svc.remove_schedule(sched.id)
+            db.session.delete(sched)
+            db.session.commit()
+        return
+    if sched is None:
+        sched = Schedule(job_id=job.id, cron_expression=cron, enabled=enabled)
+        db.session.add(sched)
+    elif sched.cron_expression != cron or sched.enabled != enabled:
+        sched.cron_expression = cron
+        sched.enabled = enabled
+        # Changing a schedule shouldn't replay what came due under the old one.
+        sched.catch_up_after = datetime.utcnow()
+    db.session.commit()
+    if sched.enabled:
+        svc.add_schedule(sched)
+    else:
+        svc.remove_schedule(sched.id)
+
+
+def _save_job(job):
+    """Validate the posted form and write it to ``job`` (a new, unsaved Job on
+    create). Returns a response when the form needs fixing, else None."""
+    form = request.form
+    excludes = [p.strip() for p in form.get("excludes", "").split("\n") if p.strip()]
+    order_by_field, order_by_direction, order_by_mixed_window = _parse_order_by(form)
+    try:
+        rules = _parse_bandwidth_rules(form)
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        if job.id is None:
+            return redirect(url_for("jobs.create_job"))
+        return redirect(url_for("jobs.edit_job", job_id=job.id))
+
+    flags, flag_errors = _parse_extra_flags(form)
+    cron, cron_error = _parse_schedule(form)
+    errors = {}
+    if flag_errors:
+        errors["extra_flags"] = flag_errors
+    if cron_error:
+        errors["schedule_cron"] = cron_error
+    if errors:
+        try:
+            editor_rules = json.loads(form.get("bandwidth_rules") or "")
+        except ValueError:
+            editor_rules = None
+        return _render_form(
+            job if job.id is not None else None,
+            _form_values(form=form),
+            errors,
+            rules=editor_rules,
+            status=400,
+        )
+
+    is_new = job.id is None
+    job.name = form["name"]
+    job.source = form["source"]
+    job.destination = form["destination"]
+    job.sync_type = form["sync_type"]
+    job.transfers = int(form.get("transfers", 4))
+    job.checkers = int(form.get("checkers", 8))
+    job.fast_list = "fast_list" in form
+    job.exclude_patterns = json.dumps(excludes)
+    job.retries = int(form.get("retries", 3))
+    job.order_by_field = order_by_field
+    job.order_by_direction = order_by_direction
+    job.order_by_mixed_window = order_by_mixed_window
+    job.compare_method = _parse_compare_method(form)
+    job.max_delete = _parse_max_delete(form)
+    job.preview_deletes = "preview_deletes" in form
+    job.max_age_hours = _parse_max_age_hours(form)
+    job.auto_resume = "auto_resume" in form
+    job.max_retries = int(form.get("max_retries", 3))
+    job.retry_delay_seconds = int(form.get("retry_delay_seconds", 60))
+    if flags is not None:
+        job.extra_flags = json.dumps(flags)
+    if rules is not None:
+        bandwidth.replace_rules(rules, job=job)
+    if is_new:
+        db.session.add(job)
+    db.session.commit()
+    _apply_schedule(job, cron, "schedule_enabled" in form)
+    if not is_new:
+        current_app.config["BANDWIDTH"].reconcile()
+    return None
+
+
 @jobs_bp.route("/")
 def list_jobs():
     jobs = Job.query.order_by(Job.created_at.desc()).all()
@@ -114,123 +345,42 @@ def list_jobs():
 @jobs_bp.route("/create", methods=["GET", "POST"])
 def create_job():
     if request.method == "POST":
-        excludes = [
-            p.strip()
-            for p in request.form.get("excludes", "").split("\n")
-            if p.strip()
-        ]
-        order_by_field, order_by_direction, order_by_mixed_window = (
-            _parse_order_by(request.form)
-        )
-        try:
-            rules = _parse_bandwidth_rules(request.form)
-        except ValueError as exc:
-            flash(str(exc), "danger")
-            return redirect(url_for("jobs.create_job"))
-        job = Job(
-            name=request.form["name"],
-            source=request.form["source"],
-            destination=request.form["destination"],
-            sync_type=request.form["sync_type"],
-            transfers=int(request.form.get("transfers", 4)),
-            checkers=int(request.form.get("checkers", 8)),
-            fast_list="fast_list" in request.form,
-            exclude_patterns=json.dumps(excludes),
-            retries=int(request.form.get("retries", 3)),
-            order_by_field=order_by_field,
-            order_by_direction=order_by_direction,
-            order_by_mixed_window=order_by_mixed_window,
-            compare_method=_parse_compare_method(request.form),
-            max_delete=_parse_max_delete(request.form),
-            max_age_hours=_parse_max_age_hours(request.form),
-            auto_resume="auto_resume" in request.form,
-            max_retries=int(request.form.get("max_retries", 3)),
-            retry_delay_seconds=int(
-                request.form.get("retry_delay_seconds", 60)
-            ),
-        )
-        if rules:
-            bandwidth.replace_rules(rules, job=job)
-        db.session.add(job)
-        db.session.commit()
+        job = Job()
+        response = _save_job(job)
+        if response is not None:
+            return response
         flash(f"Job '{job.name}' created.", "success")
         return redirect(url_for("jobs.list_jobs"))
-
-    # Try to get available remotes for the form
-    remotes = []
-    try:
-        rclone = current_app.config["RCLONE_CLIENT"]
-        result = rclone.list_remotes()
-        remotes = result.get("remotes", [])
-    except Exception:
-        pass
-    return render_template(
-        "jobs/form.html",
-        job=None,
-        remotes=remotes,
-        bandwidth_rules=[],
-        **_browser_context(),
-    )
+    return _render_form(None, _form_values())
 
 
 @jobs_bp.route("/<int:job_id>/edit", methods=["GET", "POST"])
 def edit_job(job_id):
     job = Job.query.get_or_404(job_id)
     if request.method == "POST":
-        excludes = [
-            p.strip()
-            for p in request.form.get("excludes", "").split("\n")
-            if p.strip()
-        ]
-        order_by_field, order_by_direction, order_by_mixed_window = (
-            _parse_order_by(request.form)
-        )
-        try:
-            rules = _parse_bandwidth_rules(request.form)
-        except ValueError as exc:
-            flash(str(exc), "danger")
-            return redirect(url_for("jobs.edit_job", job_id=job.id))
-        job.name = request.form["name"]
-        job.source = request.form["source"]
-        job.destination = request.form["destination"]
-        job.sync_type = request.form["sync_type"]
-        job.transfers = int(request.form.get("transfers", 4))
-        job.checkers = int(request.form.get("checkers", 8))
-        job.fast_list = "fast_list" in request.form
-        job.exclude_patterns = json.dumps(excludes)
-        job.retries = int(request.form.get("retries", 3))
-        job.order_by_field = order_by_field
-        job.order_by_direction = order_by_direction
-        job.order_by_mixed_window = order_by_mixed_window
-        job.compare_method = _parse_compare_method(request.form)
-        job.max_delete = _parse_max_delete(request.form)
-        job.max_age_hours = _parse_max_age_hours(request.form)
-        job.auto_resume = "auto_resume" in request.form
-        job.max_retries = int(request.form.get("max_retries", 3))
-        job.retry_delay_seconds = int(
-            request.form.get("retry_delay_seconds", 60)
-        )
-        if rules is not None:
-            bandwidth.replace_rules(rules, job=job)
-        db.session.commit()
-        current_app.config["BANDWIDTH"].reconcile()
+        response = _save_job(job)
+        if response is not None:
+            return response
         flash(f"Job '{job.name}' updated.", "success")
         return redirect(url_for("jobs.list_jobs"))
+    return _render_form(job, _form_values(job))
 
-    remotes = []
+
+@jobs_bp.route("/<int:job_id>/dry-run", methods=["POST"])
+def dry_run_job(job_id):
+    """Run the job with rclone's --dry-run: shows what would change, changes nothing."""
+    job = Job.query.get_or_404(job_id)
+    runner = current_app.config["JOB_RUNNER"]
     try:
-        rclone = current_app.config["RCLONE_CLIENT"]
-        result = rclone.list_remotes()
-        remotes = result.get("remotes", [])
-    except Exception:
-        pass
-    return render_template(
-        "jobs/form.html",
-        job=job,
-        remotes=remotes,
-        bandwidth_rules=[bandwidth.rule_to_dict(r) for r in job.bandwidth_rules],
-        **_browser_context(),
-    )
+        runner.start_job(job, dry_run=True)
+        flash(
+            f"Dry run of '{job.name}' started. Nothing will be changed.", "info"
+        )
+    except JobAlreadyRunning as e:
+        flash(str(e), "warning")
+    except Exception as e:
+        flash(f"Failed to start the dry run: {e}", "danger")
+    return redirect(url_for("ops.running"))
 
 
 @jobs_bp.route("/api/browse")
@@ -261,6 +411,10 @@ def browse_dirs():
 def delete_job(job_id):
     job = Job.query.get_or_404(job_id)
     name = job.name
+    # Deleting the row doesn't touch the in-memory scheduler; without this the
+    # cron entry would keep firing for a job that no longer exists.
+    if job.schedule:
+        current_app.config["SCHEDULER_SERVICE"].remove_schedule(job.schedule.id)
     db.session.delete(job)
     db.session.commit()
     flash(f"Job '{name}' deleted.", "success")

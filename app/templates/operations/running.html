@@ -4,74 +4,72 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h4><i class="bi bi-play-circle"></i> Running Operations</h4>
+    <h1 class="h4"><i class="bi bi-play-circle"></i> Running Operations</h1>
 </div>
+
+<!-- Announces runs starting and finishing; progress itself is not live. -->
+<div id="live-status" class="visually-hidden" role="status" aria-live="polite"></div>
 
 <div id="running-operations">
     {% if runs %}
         {% for run in runs %}
-        <div class="card mb-3 transfer-item" data-run-id="{{ run.id }}"
+        {% set run_name = run.job.name if run.job else 'Unknown Job' %}
+        <div class="card mb-3 transfer-item" data-run-id="{{ run.id }}" data-job-name="{{ run_name }}"
+             {% if run.phase %}data-phase="{{ run.phase }}"{% endif %}
              data-excludes="{{ (run.job.get_excludes() if run.job else [])|tojson|forceescape }}">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-start mb-2">
                     <div>
-                        <h5 class="mb-1">{{ run.job.name if run.job else 'Unknown Job' }}</h5>
+                        <h2 class="h5 mb-1">{{ run_name }}
+                            {% if run.is_dry_run %}<span class="badge bg-secondary ms-1">Dry run</span>{% endif %}
+                        </h2>
                         <small class="text-muted">
                             {{ run.job.sync_type if run.job else '' }} &middot;
                             Started {{ run.started_at|local_time_sec }}
                             &middot; rclone job #{{ run.rclone_jobid }}
                         </small>
                     </div>
-                    <form action="{{ url_for('ops.stop_job', run_id=run.id) }}" method="post">
-                        <button type="submit" class="btn btn-danger">
-                            <i class="bi bi-stop-fill"></i> Stop
+                    <form action="{{ url_for('ops.stop_job', run_id=run.id) }}" method="post"
+                          data-confirm="Stop this run? Files already transferred stay where they are, and the run is recorded as stopped."
+                          data-confirm-label="Stop run">
+                        <button type="submit" class="btn btn-outline-danger" aria-label="Stop {{ run_name }}">
+                            <i class="bi bi-stop-fill" aria-hidden="true"></i> Stop
                         </button>
                     </form>
                 </div>
 
+                {% if run.phase == 'preview' %}
+                <p class="mb-0" role="status">
+                    <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+                    <strong>Counting deletions</strong>
+                    <span class="text-muted d-block small">A dry run is checking how many files this sync would delete. Nothing has been changed. If the count is over the limit, the sync is held.</span>
+                </p>
+                {% else %}
                 <div class="progress mb-2" style="height: 25px;">
-                    <div class="progress-bar progress-bar-striped progress-bar-animated bg-success"
-                         role="progressbar" style="width: 0%">0%</div>
+                    <div class="progress-bar progress-bar-striped progress-bar-animated"
+                         role="progressbar" aria-label="Progress of {{ run_name }}"
+                         aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+                         style="width: 0%">0%</div>
                 </div>
 
-                <div class="row text-center">
-                    <div class="col">
-                        <small class="text-muted">Speed</small>
-                        <div class="transfer-speed">--</div>
-                    </div>
-                    <div class="col">
-                        <small class="text-muted">Transferred</small>
-                        <div class="transfer-bytes">--</div>
-                    </div>
-                    <div class="col">
-                        <small class="text-muted">Remaining</small>
-                        <div class="transfer-remaining">--</div>
-                    </div>
-                    <div class="col">
-                        <small class="text-muted">Files Left</small>
-                        <div class="transfer-files-left">--</div>
-                    </div>
-                    <div class="col">
-                        <small class="text-muted">New Files</small>
-                        <div class="transfer-files">--</div>
-                    </div>
-                    <div class="col">
-                        <small class="text-muted">Unchanged</small>
-                        <div class="transfer-checks">--</div>
-                    </div>
-                    <div class="col">
-                        <small class="text-muted">Errors</small>
-                        <div class="transfer-errors">--</div>
-                    </div>
-                    <div class="col">
-                        <small class="text-muted">ETA</small>
-                        <div class="transfer-eta">--</div>
-                    </div>
+                <div class="run-stats">
+                    <dl class="run-stats-group" aria-label="Data">
+                        <div><dt>Speed</dt><dd class="transfer-speed">--</dd></div>
+                        <div><dt>Transferred</dt><dd class="transfer-bytes">--</dd></div>
+                        <div><dt>Remaining</dt><dd class="transfer-remaining">--</dd></div>
+                        <div><dt>ETA</dt><dd class="transfer-eta">--</dd></div>
+                    </dl>
+                    <dl class="run-stats-group" aria-label="Files">
+                        <div><dt>Files left</dt><dd class="transfer-files-left">--</dd></div>
+                        <div><dt>New files</dt><dd class="transfer-files">--</dd></div>
+                        <div><dt>Unchanged</dt><dd class="transfer-checks">--</dd></div>
+                        <div><dt>Errors</dt><dd class="transfer-errors">--</dd></div>
+                    </dl>
                 </div>
 
                 <!-- Currently transferring files -->
                 <div class="mt-3 current-files" style="display: none;">
-                    <small class="text-muted">Currently transferring:</small>
+                    <small class="text-body-secondary">Currently transferring:</small>
                     <div class="file-list"></div>
                 </div>
 
@@ -88,14 +86,15 @@
                 </div>
 
                 {{ run_errors(run, live=True) }}
+                {% endif %}
             </div>
         </div>
         {% endfor %}
     {% else %}
         <div class="text-center py-5">
-            <i class="bi bi-pause-circle display-1 text-muted"></i>
-            <p class="text-muted mt-3">No operations running.</p>
-            <a href="{{ url_for('jobs.list_jobs') }}" class="btn btn-outline-success">
+            <i class="bi bi-pause-circle display-1 text-body-secondary" aria-hidden="true"></i>
+            <p class="text-body-secondary mt-3">No operations running.</p>
+            <a href="{{ url_for('jobs.list_jobs') }}" class="btn btn-primary">
                 <i class="bi bi-play-fill"></i> Start a Job
             </a>
         </div>
@@ -107,4 +106,5 @@
 <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 <script src="{{ url_for('static', filename='js/errors.js') }}"></script>
 <script src="{{ url_for('static', filename='js/suspects.js') }}"></script>
+<script src="{{ url_for('static', filename='js/preview.js') }}"></script>
 {% endblock %}

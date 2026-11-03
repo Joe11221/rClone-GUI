@@ -16,6 +16,8 @@ def events(app):
 
 
 def make_job(sync_type="sync", **kwargs):
+    # These tests are about the other guards; test_preview.py covers the count.
+    kwargs.setdefault("preview_deletes", False)
     job = Job(
         name="Photos",
         source="/mnt/photos",

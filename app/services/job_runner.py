@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.extensions import db
 from app.models import Job, RunHistory
@@ -28,13 +28,24 @@ class JobRunner:
         self.events = events  # EventBus; None = nobody listening
         self._active_runs = {}  # {run_history_id: rclone_jobid}
         self._pending_retries = set()  # run_ids awaiting delayed retry
+        self._previewing = set()  # run_ids still counting deletions (dry run)
         self.suspects = SuspectTracker()
 
-    def start_job(self, job, triggered_by="manual", allow_deletes=False):
+    def is_previewing(self, run_id):
+        return run_id in self._previewing
+
+    def start_job(
+        self, job, triggered_by="manual", allow_deletes=False, dry_run=False
+    ):
         """Start a run; returns it, already ``held`` if a safety check stopped it.
 
         ``allow_deletes`` is the one-off override: no preflight, no delete limit.
+        ``dry_run`` asks rclone to change nothing; it skips every safety check
+        (there is nothing to protect) and is recorded as ``triggered_by``
+        "dry_run", which health and notifications ignore.
         """
+        if dry_run:
+            triggered_by = "dry_run"
         existing = RunHistory.query.filter_by(
             job_id=job.id, status="running"
         ).first()
@@ -64,44 +75,137 @@ class JobRunner:
         Returns False (run marked held, rclone untouched) if a safety check
         failed, True once rclone has accepted the job and the run is committed.
         """
-        config = job.to_rclone_config()
+        dry_run = run.triggered_by == "dry_run"
+        config = job.to_rclone_config(dry_run=dry_run)
         if allow_deletes:
             config.pop("MaxDelete", None)
-        filters = job.to_rclone_filter()
+        snapshot = {
+            "source": job.source,
+            "destination": job.destination,
+            "sync_type": job.sync_type,
+            "config": config,
+            "filter": job.to_rclone_filter(),
+        }
 
-        if job.sync_type == "sync" and not allow_deletes:
+        preview = False
+        if job.sync_type == "sync" and not allow_deletes and not dry_run:
             held = self._preflight(job)
             if held:
                 self._hold(run, job, *held)
                 return False
+            # With no limit (-1) there is nothing to compare the count to.
+            preview = job.preview_deletes is not False and "MaxDelete" in config
 
-        run.config_snapshot = json.dumps(
-            {
-                "source": job.source,
-                "destination": job.destination,
-                "sync_type": job.sync_type,
-                "config": config,
-                "filter": filters,
-            }
-        )
+        run.config_snapshot = json.dumps(snapshot)
+        if preview:
+            self._start_preview(run, snapshot)
+        else:
+            self._launch(run, job, snapshot)
+        return True
 
+    def _launch(self, run, job, snapshot):
+        """Start the run's real rclone job from its recorded settings."""
         dispatch = {
             "sync": self.rclone.start_sync,
             "copy": self.rclone.start_copy,
             "move": self.rclone.start_move,
         }
-        fn = dispatch[job.sync_type]
+        fn = dispatch[snapshot["sync_type"]]
         self._update_bandwidth(starting=job)
         result = fn(
-            src_fs=job.source,
-            dst_fs=job.destination,
+            src_fs=snapshot["source"],
+            dst_fs=snapshot["destination"],
             group=run.stats_group,
-            _config=config,
-            _filter=filters,
+            _config=snapshot["config"],
+            _filter=snapshot["filter"],
         )
         run.rclone_jobid = result["jobid"]
         db.session.commit()
-        return True
+
+    def _start_preview(self, run, snapshot):
+        """Start the dry run that counts deletions; never waits for it.
+
+        The run stays ``running`` with ``phase`` "preview", and until the dry
+        run ends its rclone job id and stats group are the dry run's.
+        """
+        config = {k: v for k, v in snapshot["config"].items() if k != "MaxDelete"}
+        config["DryRun"] = True
+        run.phase = "preview"
+        run.stats_group = f"job_{run.id}_preview"
+        result = self.rclone.start_sync(
+            src_fs=snapshot["source"],
+            dst_fs=snapshot["destination"],
+            group=run.stats_group,
+            _config=config,
+            _filter=snapshot["filter"],
+        )
+        run.rclone_jobid = result["jobid"]
+        db.session.commit()
+        self._previewing.add(run.id)
+
+    def _finish_preview(self, run, status):
+        """The dry run has ended: hold the run, or start the real sync."""
+        self._previewing.discard(run.id)
+        self._active_runs.pop(run.id, None)
+        job = db.session.get(Job, run.job_id)
+        snapshot = run.get_config_snapshot() or {}
+        limit = (snapshot.get("config") or {}).get("MaxDelete")
+        group = run.stats_group
+        run.phase = None
+        run.stats_group = f"job_{run.id}"
+
+        stats = {}
+        try:
+            stats = self.rclone.get_stats(group=group)
+        except Exception as exc:
+            logger.warning("No stats for preview of Run #%d: %s", run.id, exc)
+        if not status.get("success"):
+            error = status.get("error") or stats.get("lastError")
+            reason = "Could not count the deletions, so the sync was not started" + (
+                f": {error}" if error else "."
+            )
+            self._hold(run, job, "preview_failed", reason, keep_start=True)
+            return
+
+        count = int(stats.get("deletes") or 0)
+        run.would_delete = count
+        if limit is not None and count > limit:
+            run.would_delete_paths = json.dumps(self._deleting_paths(group))
+            reason = (
+                f"This sync would delete {count:,} files from "
+                f"{snapshot.get('destination')}, more than the limit of "
+                f"{limit:,}. It was not started."
+            )
+            self._hold(run, job, "delete_preview", reason, keep_start=True)
+            return
+
+        try:
+            self._launch(run, job, snapshot)
+        except Exception as exc:
+            db.session.rollback()
+            run.status = "failed"
+            run.finished_at = datetime.utcnow()
+            run.error_message = f"Failed to start the sync after the preview: {exc}"
+            db.session.commit()
+            logger.warning("Failed to start Run #%d after preview: %s", run.id, exc)
+            self._emit_finished(run)
+            return
+        self._active_runs[run.id] = run.rclone_jobid
+
+    def _deleting_paths(self, group, limit=50):
+        """Up to ``limit`` paths a dry run would delete. rclone's transferred
+        list only holds its latest ~100 entries, so a huge delete shows a
+        sample; the count comes from the stats instead."""
+        try:
+            reply = self.rclone.get_transferred(group=group)
+        except Exception:
+            return []
+        names = [
+            t.get("name")
+            for t in (reply or {}).get("transferred") or []
+            if t.get("what") == "deleting" and t.get("name")
+        ]
+        return names[:limit]
 
     def _preflight(self, job):
         """(guard, reason) if a sync must not start, else None.
@@ -124,12 +228,14 @@ class JobRunner:
             )
         return None
 
-    def _hold(self, run, job, guard, reason):
+    def _hold(self, run, job, guard, reason, keep_start=False):
         now = datetime.utcnow()
         run.status = "held"
         run.guard = guard
         run.error_message = reason
-        run.started_at = run.finished_at = now
+        run.finished_at = now
+        if not keep_start:
+            run.started_at = now
         db.session.commit()
         logger.warning("Held Run #%d of '%s': %s", run.id, job.name, reason)
         if self.events:
@@ -143,7 +249,8 @@ class JobRunner:
             )
 
     def _emit_finished(self, run, will_retry=False):
-        if not self.events:
+        # A dry run is something the user asked to look at; nobody needs a ping.
+        if not self.events or run.triggered_by == "dry_run":
             return
         job = db.session.get(Job, run.job_id)
         self.events.emit(
@@ -180,14 +287,19 @@ class JobRunner:
             except Exception:
                 pass
 
-        # Capture final stats before marking stopped
-        self.collect_errors(run)
-        self._save_final_stats(run)
+        if run.phase == "preview":
+            # Those stats belong to the dry run, not to anything this run did.
+            run.phase = None
+        else:
+            # Capture final stats before marking stopped
+            self.collect_errors(run)
+            self._save_final_stats(run)
 
         run.status = "stopped"
         run.finished_at = datetime.utcnow()
         db.session.commit()
         self._active_runs.pop(run.id, None)
+        self._previewing.discard(run.id)
         self._update_bandwidth()
         self._emit_finished(run)
 
@@ -198,9 +310,11 @@ class JobRunner:
             return None
         try:
             # Python 3.11+ handles 'Z' directly; for 3.9/3.10 replace it
-            return datetime.fromisoformat(
-                time_str.replace("Z", "+00:00")
-            ).replace(tzinfo=None)
+            parsed = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
+            # rclone reports its own local offset (e.g. -05:00), not always Z.
+            if parsed.tzinfo is not None:
+                parsed = parsed.astimezone(timezone.utc)
+            return parsed.replace(tzinfo=None)
         except (ValueError, TypeError):
             return None
 
@@ -244,7 +358,7 @@ class JobRunner:
         """Poll every tracked run; called often since rclone forgets old entries."""
         for run_id in list(self._active_runs):
             run = db.session.get(RunHistory, run_id)
-            if run:
+            if run and run.phase != "preview":
                 self.collect_errors(run)
                 self._note_active_transfers(run)
         self.suspects.prune(self._active_runs)
@@ -298,6 +412,10 @@ class JobRunner:
                     del self._active_runs[run_id]
                     continue
 
+                if run.phase == "preview":
+                    self._finish_preview(run, status)
+                    continue
+
                 # Use rclone's actual end time for accuracy (falls back to now)
                 run.finished_at = (
                     self._parse_rclone_time(status.get("endTime"))
@@ -336,6 +454,7 @@ class JobRunner:
                 if (
                     not success
                     and not run.guard
+                    and not run.is_dry_run
                     and run_id not in self._pending_retries
                 ):
                     job = db.session.get(Job, run.job_id)
@@ -377,6 +496,8 @@ class JobRunner:
                     self.rclone.job_status(run.rclone_jobid)
                     # Job still alive in rclone — re-track it
                     self._active_runs[run.id] = run.rclone_jobid
+                    if run.phase == "preview":
+                        self._previewing.add(run.id)
                     logger.info(
                         "Run #%d still alive in rclone, re-tracking", run.id
                     )
@@ -384,13 +505,17 @@ class JobRunner:
                 except Exception:
                     pass
 
-            # Job lost after restart — mark failed or resume
+            # Job lost after restart — mark failed or resume. A run lost during
+            # its preview is treated the same way: nothing was deleted yet, and
+            # a resume starts over with a fresh preview. Dry runs never resume.
             run.finished_at = datetime.utcnow()
             run.error_message = "Lost track of job after restart"
+            run.phase = None
 
             job = db.session.get(Job, run.job_id)
             if (
                 job
+                and not run.is_dry_run
                 and job.auto_resume
                 and run.retry_count < job.max_retries
             ):

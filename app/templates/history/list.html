@@ -2,7 +2,42 @@
 {% block title %}History - rClone GUI{% endblock %}
 
 {% block content %}
-<h4 class="mb-3"><i class="bi bi-journal-text"></i> Run History</h4>
+<h1 class="h4 mb-3"><i class="bi bi-journal-text"></i> Run History</h1>
+
+<form method="get" action="{{ url_for('history.list_history') }}" class="row g-2 align-items-end mb-3">
+    <div class="col-sm-5 col-md-4 col-lg-3">
+        <label for="f-job" class="form-label small mb-1">Job</label>
+        <select class="form-select form-select-sm" id="f-job" name="job">
+            <option value="">All jobs</option>
+            {% for j in jobs %}
+            <option value="{{ j.id }}" {{ 'selected' if j.id == job_id }}>{{ j.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-sm-4 col-md-3 col-lg-2">
+        <label for="f-status" class="form-label small mb-1">Status</label>
+        <select class="form-select form-select-sm" id="f-status" name="status">
+            <option value="">Any status</option>
+            {% for st in statuses %}
+            <option value="{{ st }}" {{ 'selected' if st == status }}>{{ st|capitalize }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-auto d-flex gap-2 align-items-center">
+        <button type="submit" class="btn btn-sm btn-outline-secondary">Apply filters</button>
+        {% if job_id or status %}
+        <a href="{{ url_for('history.list_history') }}" class="small">Reset filters</a>
+        {% endif %}
+    </div>
+</form>
+
+{% if job_id or status %}
+<p class="small text-muted mb-2" role="status">
+    {{ total }} run{{ '' if total == 1 else 's' }}
+    {%- if job_id %} for {% for j in jobs if j.id == job_id %}{{ j.name }}{% endfor %}{% endif %}
+    {%- if status %} with status {{ status }}{% endif %}.
+</p>
+{% endif %}
 
 {% if runs %}
 <div class="table-responsive">
@@ -18,13 +53,16 @@
                 <th>Files</th>
                 <th>Errors</th>
                 <th>Trigger</th>
-                <th></th>
+                <th><span class="visually-hidden">Actions</span></th>
             </tr>
         </thead>
         <tbody>
             {% for run in runs %}
             <tr>
-                <td>{{ run.job.name if run.job else 'Deleted Job' }}</td>
+                <td>
+                    <a href="{{ url_for('history.detail', run_id=run.id) }}">{{ run.job.name if run.job else 'Deleted Job' }}</a>
+                    <div class="small text-muted">Run #{{ run.id }}</div>
+                </td>
                 <td>
                     {% if run.status == 'running' %}
                         <span class="badge bg-primary"><i class="bi bi-arrow-repeat"></i> Running</span>
@@ -66,19 +104,16 @@
                 <td>{{ run.files_transferred or '--' }}</td>
                 <td>
                     {% if run.errors %}
-                        <span class="text-danger">{{ run.errors }}</span>
+                        <i class="bi bi-exclamation-triangle text-danger" aria-hidden="true"></i> {{ run.errors }}
                     {% else %}
                         0
                     {% endif %}
                 </td>
-                <td><span class="badge bg-secondary">{{ run.triggered_by }}</span></td>
-                <td class="d-flex gap-1">
-                    <a href="{{ url_for('history.detail', run_id=run.id) }}" class="btn btn-sm btn-outline-secondary">
-                        <i class="bi bi-eye"></i>
-                    </a>
-                    {% if run.status in ['failed', 'interrupted'] and run.job and not run.guard %}
+                <td><span class="badge bg-secondary">{{ 'Dry run' if run.is_dry_run else run.triggered_by }}</span></td>
+                <td><div class="d-flex gap-1">
+                    {% if run.status in ['failed', 'interrupted'] and run.job and not run.guard and not run.is_dry_run %}
                     <form method="post" action="{{ url_for('ops.resume_run', run_id=run.id) }}" class="d-inline">
-                        <button type="submit" class="btn btn-sm btn-outline-primary" title="Resume">
+                        <button type="submit" class="btn btn-sm btn-outline-secondary" title="Resume" aria-label="Resume run {{ run.id }} of {{ run.job.name }}">
                             <i class="bi bi-arrow-clockwise"></i>
                         </button>
                     </form>
@@ -87,21 +122,44 @@
                     <form method="post" action="{{ url_for('ops.start_job', job_id=run.job_id) }}" class="d-inline"
                           data-confirm="This run will skip the safety checks and may delete files at the destination. Continue?" data-confirm-label="Run anyway">
                         <input type="hidden" name="override" value="1">
-                        <button type="submit" class="btn btn-sm btn-outline-warning" title="Run anyway">
+                        <button type="submit" class="btn btn-sm btn-outline-secondary" title="Run anyway" aria-label="Run {{ run.job.name }} anyway, skipping safety checks">
                             <i class="bi bi-shield-slash"></i>
                         </button>
                     </form>
                     {% endif %}
-                </td>
+                </div></td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
+
+<nav class="d-flex justify-content-between align-items-center mt-3" aria-label="History pages">
+    <span class="small text-muted">
+        Page {{ page }} of {{ pages }}, {{ total }} run{{ '' if total == 1 else 's' }}
+    </span>
+    <div class="d-flex gap-2">
+        {% if page > 1 %}
+        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('history.list_history', job=job_id, status=status or None, page=page - 1) }}" rel="prev">
+            <i class="bi bi-chevron-left" aria-hidden="true"></i> Newer
+        </a>
+        {% endif %}
+        {% if page < pages %}
+        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('history.list_history', job=job_id, status=status or None, page=page + 1) }}" rel="next">
+            Older <i class="bi bi-chevron-right" aria-hidden="true"></i>
+        </a>
+        {% endif %}
+    </div>
+</nav>
 {% else %}
 <div class="text-center py-5">
-    <i class="bi bi-journal display-1 text-muted"></i>
+    <i class="bi bi-journal display-1 text-muted" aria-hidden="true"></i>
+    {% if job_id or status %}
+    <p class="text-muted mt-3">No runs match these filters.</p>
+    <a href="{{ url_for('history.list_history') }}" class="btn btn-outline-secondary">Reset filters</a>
+    {% else %}
     <p class="text-muted mt-3">No run history yet.</p>
+    {% endif %}
 </div>
 {% endif %}
 {% endblock %}

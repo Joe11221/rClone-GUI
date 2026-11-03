@@ -25,12 +25,18 @@ function suspectRow(runId, excluded, suspect) {
 
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'btn btn-sm btn-outline-warning text-nowrap';
-    button.innerHTML = '<i class="bi bi-slash-circle"></i> Exclude';
+    button.className = 'btn btn-sm btn-outline-secondary text-nowrap';
+    const icon = document.createElement('i');
+    icon.className = 'bi bi-slash-circle';
+    icon.setAttribute('aria-hidden', 'true');
+    button.append(icon, ' Exclude');
+    // Several rows say just "Exclude"; name the folder for screen readers.
+    button.setAttribute('aria-label', 'Exclude ' + suspect.path + ' from the next run');
     const markExcluded = () => {
         button.disabled = true;
         button.className = 'btn btn-sm btn-outline-secondary text-nowrap';
         button.textContent = 'Excluded next run';
+        button.setAttribute('aria-label', suspect.path + ' will be excluded from the next run');
     };
     if (excluded.has(suspect.pattern)) markExcluded();
     button.addEventListener('click', () => {
@@ -48,6 +54,7 @@ function suspectRow(runId, excluded, suspect) {
             .catch(() => {
                 button.disabled = false;
                 button.textContent = 'Failed, retry';
+                button.setAttribute('aria-label', 'Exclude failed for ' + suspect.path + ', retry');
             });
     });
 

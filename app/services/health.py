@@ -12,19 +12,25 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
 
-from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import and_, or_
+
+from app.services.cron_trigger import cron_trigger
 
 logger = logging.getLogger(__name__)
 
 FAILURE_STATUSES = ("failed", "held")
+# triggered_by of a run that changed nothing; it says nothing about health.
+DRY_RUN = "dry_run"
 ATTENTION_STATES = ("failing", "overdue", "warning")
+# "pending": scheduled (or time-limited) and waiting for a first success.
+# "manual": no enabled schedule and no max age, so nothing is ever expected.
 _STATE_ORDER = {
     "failing": 0,
     "overdue": 1,
     "warning": 2,
-    "pending": 3,
-    "healthy": 4,
+    "healthy": 3,
+    "pending": 4,
+    "manual": 5,
 }
 _TIME_FMT = "%Y-%m-%d %H:%M"
 
@@ -79,7 +85,7 @@ def _local_text(dt, tz):
 def next_fire(cron_expression, after, tz):
     """First cron fire time strictly after ``after`` (naive UTC), as naive UTC."""
     try:
-        trigger = CronTrigger.from_crontab(cron_expression, timezone=tz)
+        trigger = cron_trigger(cron_expression, timezone=tz)
         fire = trigger.get_next_fire_time(
             None, after.replace(tzinfo=dt_timezone.utc) + timedelta(microseconds=1)
         )
@@ -101,7 +107,9 @@ def _finished(run):
 
 def evaluate_job(job, runs, now, tz, grace):
     """Health of one job from its relevant ``runs`` (any order)."""
-    runs = sorted(runs, key=_run_key, reverse=True)
+    runs = sorted(
+        (r for r in runs if r.triggered_by != DRY_RUN), key=_run_key, reverse=True
+    )
     schedule = job.schedule
     enabled_schedule = schedule if schedule is not None and schedule.enabled else None
 
@@ -163,12 +171,9 @@ def evaluate_job(job, runs, now, tz, grace):
         state = "healthy"
         detail = "Last success " + time_ago(_finished(last_success), now)
     if state is None:
-        state = "pending"
-        detail = (
-            "Waiting for its first run"
-            if enabled_schedule or runs
-            else "Not scheduled"
-        )
+        expects_runs = bool(enabled_schedule or job.max_age_hours)
+        state = "pending" if expects_runs else "manual"
+        detail = _never_succeeded_detail(last_run, running, expects_runs, now)
 
     return JobHealth(
         job_id=job.id,
@@ -185,6 +190,17 @@ def evaluate_job(job, runs, now, tz, grace):
         next_run=next_run,
         success_rate_7d=rate,
     )
+
+
+def _never_succeeded_detail(last_run, running, expects_runs, now):
+    if last_run is None:
+        return "Waiting for its first run" if expects_runs else "Manual only, never run"
+    if running:
+        return "First run in progress"
+    what = {"stopped": "was stopped", "interrupted": "was interrupted"}.get(
+        last_run.status, f"was {last_run.status}"
+    )
+    return f"Last run {what} {time_ago(_finished(last_run), now)} · never succeeded"
 
 
 def _overdue_detail(job, schedule, last_success, running, now, tz, grace):
@@ -235,6 +251,8 @@ def build_report(jobs, runs_by_job, now, tz, grace):
     week_ago = now - timedelta(days=7)
     for runs in runs_by_job.values():
         for r in runs:
+            if r.triggered_by == DRY_RUN:
+                continue
             if r.started_at and r.started_at >= week_ago:
                 if r.status == "completed":
                     ok += 1
@@ -246,7 +264,10 @@ def build_report(jobs, runs_by_job, now, tz, grace):
         "healthy": sum(1 for e in entries if e.state == "healthy"),
         "attention": sum(1 for e in entries if e.state in ATTENTION_STATES),
         "pending": sum(1 for e in entries if e.state == "pending"),
+        "manual": sum(1 for e in entries if e.state == "manual"),
         "success_rate_7d": ok / (ok + bad) if ok + bad else None,
+        "recent_ok": ok,
+        "recent_runs": ok + bad,
         "jobs": entries,
     }
 
@@ -258,9 +279,99 @@ def report_to_dict(report):
         "healthy": report["healthy"],
         "attention": report["attention"],
         "pending": report["pending"],
+        "manual": report["manual"],
         "success_rate_7d": report["success_rate_7d"],
         "jobs": [e.to_dict() for e in report["jobs"]],
     }
+
+
+def when_text(dt, now, tz):
+    """'today at 02:00', 'tomorrow at 02:00' or 'Mon 10 Nov at 02:00' (local)."""
+    local = dt.replace(tzinfo=dt_timezone.utc).astimezone(tz)
+    today = now.replace(tzinfo=dt_timezone.utc).astimezone(tz).date()
+    days = (local.date() - today).days
+    clock = local.strftime("%H:%M")
+    if days == 0:
+        return f"today at {clock}"
+    if days == 1:
+        return f"tomorrow at {clock}"
+    return f"{local.strftime('%a')} {local.day} {local.strftime('%b')} at {clock}"
+
+
+def verdict(report, now, tz):
+    """One sentence answering 'did my backups run?' plus a quieter second line.
+
+    ``level`` is ok | attention | neutral | empty and drives the icon.
+    """
+    jobs = report["jobs"]
+    total = report["total"]
+    if not total:
+        return {
+            "level": "empty",
+            "headline": "No backups set up yet",
+            "detail": "",
+        }
+    problems = [e for e in jobs if e.state in ATTENTION_STATES]
+    plural = lambda n, one, many: one if n == 1 else many  # noqa: E731
+    if problems:
+        level = "attention"
+        headline = (
+            f"{len(problems)} of {total} {plural(total, 'backup', 'backups')} "
+            f"{plural(len(problems), 'needs', 'need')} attention"
+        )
+        detail = "Check " + ", ".join(e.name for e in problems[:3])
+        if len(problems) > 3:
+            detail += f" and {len(problems) - 3} more"
+        detail += "."
+    elif report["healthy"] == total:
+        level = "ok"
+        headline = (
+            "The backup is healthy"
+            if total == 1
+            else f"All {total} backups are healthy"
+        )
+        detail = ""
+    else:
+        level = "neutral"
+        headline = (
+            f"{report['healthy']} of {total} "
+            f"{plural(total, 'backup is', 'backups are')} healthy"
+        )
+        detail = "No problems found. The others are manual or waiting for a first run."
+    upcoming = [e for e in jobs if e.next_run]
+    if upcoming:
+        nxt = min(upcoming, key=lambda e: e.next_run)
+        line = f"Next: {nxt.name} {when_text(nxt.next_run, now, tz)}"
+        detail = f"{detail} {line}" if detail else line
+    if report["recent_runs"]:
+        line = (
+            f"{report['recent_ok']} of {report['recent_runs']} "
+            f"{plural(report['recent_runs'], 'run', 'runs')} succeeded this week"
+        )
+        detail = f"{detail} · {line}" if detail else line
+    return {"level": level, "headline": headline, "detail": detail}
+
+
+def dashboard_rows(report, now, tz):
+    """Job entries with display text for the dashboard rows."""
+    rows = []
+    for e in report["jobs"]:
+        rows.append(
+            {
+                "entry": e,
+                # The Last success column already says it for healthy jobs.
+                "reason": "" if e.state == "healthy" else e.detail,
+                "last_success_text": time_ago(e.last_success, now)
+                if e.last_success
+                else "never",
+                "last_success_title": _local_text(e.last_success, tz)
+                if e.last_success
+                else "",
+                "next_text": when_text(e.next_run, now, tz) if e.next_run else "",
+                "next_title": _local_text(e.next_run, tz) if e.next_run else "",
+            }
+        )
+    return rows
 
 
 def load_runs(jobs, now):
@@ -273,7 +384,9 @@ def load_runs(jobs, now):
     week_ago = now - timedelta(days=7)
     newest_first = (RunHistory.started_at.desc(), RunHistory.id.desc())
     for job in jobs:
-        base = RunHistory.query.filter_by(job_id=job.id)
+        base = RunHistory.query.filter_by(job_id=job.id).filter(
+            RunHistory.triggered_by.is_distinct_from(DRY_RUN)
+        )
         completed = base.filter_by(status="completed").order_by(*newest_first)
         last_ok = completed.first()
         since = base.filter(RunHistory.status.in_(FAILURE_STATUSES))

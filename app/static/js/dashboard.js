@@ -3,22 +3,103 @@
 // Track last known stats per run to avoid flickering back to zero
 const lastKnownStats = {};
 
+// Run ids from the previous SSE message; null until the first one arrives.
+let knownRunIds = null;
+let refreshTimer = null;
+
+function announce(message) {
+    let region = document.getElementById('live-status');
+    if (!region) {
+        region = document.createElement('div');
+        region.id = 'live-status';
+        region.className = 'visually-hidden';
+        region.setAttribute('role', 'status');
+        region.setAttribute('aria-live', 'polite');
+        document.body.appendChild(region);
+    }
+    region.textContent = message;
+}
+
+function setProgress(bar, pct) {
+    bar.style.width = pct + '%';
+    bar.textContent = pct + '%';
+    bar.setAttribute('aria-valuenow', pct);
+}
+
+// Re-fetch this page and swap in the server-rendered sections, so a run that
+// starts or finishes while the page is open shows up without a manual reload.
+async function refreshSections() {
+    try {
+        const response = await fetch(location.href, { headers: { Accept: 'text/html' } });
+        if (!response.ok) return null;
+        const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
+        document.querySelectorAll('[data-refresh]').forEach(el => {
+            const fresh = doc.querySelector('[data-refresh="' + el.dataset.refresh + '"]');
+            if (fresh) el.replaceWith(document.importNode(fresh, true));
+        });
+        return doc;
+    } catch (e) {
+        return null;
+    }
+}
+
+function runNameFor(runId) {
+    const item = document.querySelector('.transfer-item[data-run-id="' + runId + '"]');
+    return item && item.dataset.jobName ? item.dataset.jobName : 'A backup';
+}
+
+// Compare the runs rclone reports with the previous message and react to changes.
+function handleRunSetChange(currentIds) {
+    if (knownRunIds === null) {
+        knownRunIds = currentIds;
+        return;
+    }
+    const started = [...currentIds].filter(id => !knownRunIds.has(id));
+    const finished = [...knownRunIds].filter(id => !currentIds.has(id));
+    knownRunIds = currentIds;
+    if (!started.length && !finished.length) return;
+
+    finished.forEach(id => announce(runNameFor(id) + ' finished.'));
+    const onDashboard = !!document.querySelector('[data-refresh]');
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(async () => {
+        if (onDashboard) {
+            await refreshSections();
+            started.forEach(id => announce(runNameFor(id) + ' started.'));
+        } else {
+            location.reload();  // the running page has per-run scripts bound to its cards
+        }
+    }, finished.length ? 1500 : 500);  // let the run record settle before re-reading it
+}
+
+// A run's phase changes (counting deletions, then transferring) without the
+// set of runs changing, so re-read the page while any run is still counting.
+setInterval(() => {
+    if (document.querySelector('.transfer-item.is-preview')) refreshSections();
+}, 4000);
+
 window.addEventListener('rclone-stats', function(e) {
     const data = e.detail;
     const runs = data.runs || {};
 
     // Update global stats cards (aggregated from our app's runs only)
     const speedEl = document.getElementById('global-speed');
-    if (speedEl) speedEl.textContent = formatSpeed(data.total_speed || 0);
+    if (speedEl) speedEl.textContent = data.active_count > 0 ? formatSpeed(data.total_speed || 0) : '--';
 
+    // The card shows the last 24 hours: finished runs (rendered by the server)
+    // plus what the running ones have moved so far.
     const bytesEl = document.getElementById('global-bytes');
-    if (bytesEl) bytesEl.textContent = formatBytes(data.total_bytes || 0);
+    if (bytesEl) bytesEl.textContent = formatBytes((Number(bytesEl.dataset.base) || 0) + (data.total_bytes || 0));
 
     const activeEl = document.getElementById('active-count');
     if (activeEl) activeEl.textContent = data.active_count || 0;
 
     // Track which run IDs are still active so we can clean up lastKnownStats
     const activeRunIds = new Set(Object.keys(runs));
+    handleRunSetChange(activeRunIds);
+
+    const emptyEl = document.getElementById('active-empty');
+    if (emptyEl) emptyEl.classList.toggle('d-none', data.active_count > 0);
 
     // Update each transfer item with its own per-run stats
     const transferItems = document.querySelectorAll('.transfer-item');
@@ -28,6 +109,8 @@ window.addEventListener('rclone-stats', function(e) {
 
         const stats = runs[runId].stats;
         if (!stats) return;
+        // Counting deletions has no meaningful percentage; the bar stays indeterminate.
+        if (item.classList.contains('is-preview')) return;
 
         // Initialize tracking for this run if needed
         if (!lastKnownStats[runId]) {
@@ -109,10 +192,7 @@ window.addEventListener('rclone-stats', function(e) {
             const displayPct = Math.max(overallPct, prev.pct || 0);
 
             const progressBar = item.querySelector('.progress-bar');
-            if (progressBar) {
-                progressBar.style.width = displayPct + '%';
-                progressBar.textContent = displayPct + '%';
-            }
+            if (progressBar) setProgress(progressBar, displayPct);
         } else if (stats.transferring && stats.transferring.length > 0) {
             // Fallback: if totalBytes not available, use average of in-flight files
             let avgPct = 0;
@@ -120,10 +200,7 @@ window.addEventListener('rclone-stats', function(e) {
             avgPct = Math.round(avgPct / stats.transferring.length);
 
             const progressBar = item.querySelector('.progress-bar');
-            if (progressBar && avgPct > 0) {
-                progressBar.style.width = avgPct + '%';
-                progressBar.textContent = avgPct + '%';
-            }
+            if (progressBar && avgPct > 0) setProgress(progressBar, avgPct);
             // Don't update progress bar when avgPct is 0 — keep last shown value
         }
 
@@ -133,23 +210,34 @@ window.addEventListener('rclone-stats', function(e) {
             const fileList = item.querySelector('.file-list');
             if (currentFiles && fileList) {
                 currentFiles.style.display = 'block';
-                fileList.innerHTML = '';
+                // Reconcile rows by file name so the list doesn't flash on every tick.
+                const rows = new Map();
+                fileList.querySelectorAll('.file-item').forEach(row => rows.set(row.dataset.file, row));
+                const seen = new Set();
                 stats.transferring.forEach(t => {
-                    const div = document.createElement('div');
-                    div.className = 'file-item d-flex justify-content-between';
-                    const pct = t.percentage || 0;
-                    // File names come from the filesystem and are untrusted:
-                    // always use textContent, never innerHTML.
-                    const nameSpan = document.createElement('span');
-                    nameSpan.className = 'text-truncate me-2';
-                    nameSpan.style.maxWidth = '70%';
-                    nameSpan.textContent = t.name;
-                    const statSpan = document.createElement('span');
-                    statSpan.className = 'text-nowrap';
-                    statSpan.textContent = pct + '% ' + formatSpeed(t.speed);
-                    div.append(nameSpan, statSpan);
-                    fileList.appendChild(div);
+                    seen.add(t.name);
+                    let div = rows.get(t.name);
+                    let statSpan;
+                    if (!div) {
+                        div = document.createElement('div');
+                        div.className = 'file-item d-flex justify-content-between';
+                        div.dataset.file = t.name;
+                        // File names come from the filesystem and are untrusted:
+                        // always use textContent, never innerHTML.
+                        const nameSpan = document.createElement('span');
+                        nameSpan.className = 'text-truncate me-2';
+                        nameSpan.style.maxWidth = '70%';
+                        nameSpan.textContent = t.name;
+                        statSpan = document.createElement('span');
+                        statSpan.className = 'text-nowrap file-stat';
+                        div.append(nameSpan, statSpan);
+                        fileList.appendChild(div);
+                    } else {
+                        statSpan = div.querySelector('.file-stat');
+                    }
+                    statSpan.textContent = (t.percentage || 0) + '% ' + formatSpeed(t.speed);
                 });
+                rows.forEach((row, name) => { if (!seen.has(name)) row.remove(); });
             }
         }
         // Don't hide current-files when transferring is empty — keep showing last state

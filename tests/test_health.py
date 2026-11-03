@@ -170,10 +170,70 @@ def test_never_run_before_first_due_is_pending():
     assert h.detail == "Waiting for its first run"
 
 
-def test_pending_manual_job_not_scheduled():
+def test_manual_job_never_run():
     h = ev(make_job(), [])
+    assert h.state == "manual"
+    assert h.detail == "Manual only, never run"
+
+
+def test_disabled_schedule_with_only_a_stopped_run_says_so():
+    job = make_job(cron="0 2 * * *", enabled=False)
+    h = ev(job, [run("stopped", ago=timedelta(days=8, hours=12))])
+    assert h.state == "manual"
+    assert h.detail == "Last run was stopped 8 days ago · never succeeded"
+
+
+def test_scheduled_job_with_only_a_stopped_run_is_pending_with_truth():
+    job = make_job(cron="0 2 * * *", created=NOW - timedelta(hours=3))
+    h = ev(job, [run("stopped", ago=timedelta(hours=1))])
     assert h.state == "pending"
-    assert h.detail == "Not scheduled"
+    assert "was stopped" in h.detail and "never succeeded" in h.detail
+
+
+def test_first_run_in_progress_detail():
+    job = make_job(cron="0 2 * * *", created=NOW - timedelta(hours=3))
+    h = ev(job, [run("running", ago=timedelta(minutes=5))])
+    assert h.detail == "First run in progress"
+
+
+def test_verdict_levels():
+    tz = TZ
+    def report(*specs):
+        jobs, by = [], {}
+        for i, (name, runs, kw) in enumerate(specs, start=1):
+            j = make_job(name=name, **kw)
+            j.id = i
+            jobs.append(j)
+            by[i] = runs
+        return health.build_report(jobs, by, NOW, tz, GRACE)
+
+    assert health.verdict(report(), NOW, tz)["level"] == "empty"
+    ok = health.verdict(report(("A", [run()], {}), ("B", [run()], {})), NOW, tz)
+    assert ok["level"] == "ok" and ok["headline"] == "All 2 backups are healthy"
+    assert "2 of 2 runs succeeded this week" in ok["detail"]
+    bad = health.verdict(
+        report(("A", [run()], {}), ("Docs", [run("failed")], {})), NOW, tz
+    )
+    assert bad["level"] == "attention"
+    assert bad["headline"] == "1 of 2 backups needs attention"
+    assert "Check Docs." in bad["detail"]
+    mixed = health.verdict(report(("A", [run()], {}), ("M", [], {})), NOW, tz)
+    assert mixed["level"] == "neutral"
+
+
+def test_verdict_names_next_scheduled_run():
+    job = make_job(name="Photos", cron="0 2 * * *")
+    job.id = 1
+    rep = health.build_report([job], {1: [run()]}, NOW, TZ, GRACE)
+    assert "Next: Photos " in health.verdict(rep, NOW, TZ)["detail"]
+
+
+def test_when_text():
+    now = datetime(2025, 6, 1, 12, 0)
+    tz = ZoneInfo("UTC")
+    assert health.when_text(datetime(2025, 6, 1, 20, 0), now, tz) == "today at 20:00"
+    assert health.when_text(datetime(2025, 6, 2, 2, 0), now, tz) == "tomorrow at 02:00"
+    assert health.when_text(datetime(2025, 6, 5, 2, 0), now, tz) == "Thu 5 Jun at 02:00"
 
 
 def test_manual_job_never_overdue():
@@ -230,7 +290,7 @@ def test_report_ordering_and_summary():
     specs = {
         "zeta-healthy": [run()],
         "alpha-healthy": [run()],
-        "pending": [],
+        "manual": [],
         "bfail": [run("failed")],
         "afail": [run("failed")],
         "overdue": [run(ago=timedelta(hours=100))],
@@ -245,9 +305,9 @@ def test_report_ordering_and_summary():
         "afail",
         "bfail",
         "overdue",
-        "pending",
         "alpha-healthy",
         "zeta-healthy",
+        "manual",
     ]
     assert report["total"] == 6
     assert report["healthy"] == 2
@@ -298,7 +358,7 @@ def test_first_evaluation_is_silent(app, events):
     with app.app_context():
         job = add_job()
         health.evaluate_and_record(app, now=NOW)
-        assert db.session.get(Job, job.id).health_state == "pending"
+        assert db.session.get(Job, job.id).health_state == "manual"
     assert events == []
 
 
@@ -319,7 +379,7 @@ def test_change_emits_event_then_quiet(app, events):
             {
                 "job_id": job_id,
                 "job_name": "Photos",
-                "old_state": "pending",
+                "old_state": "manual",
                 "new_state": "failing",
                 "detail": "Last run failed: boom",
             },
@@ -333,8 +393,8 @@ def test_change_emits_event_then_quiet(app, events):
 def test_dashboard_with_no_jobs(client):
     resp = client.get("/")
     assert resp.status_code == 200
-    assert b"Backup health" in resp.data
-    assert b"No jobs yet" in resp.data
+    assert b"No backups set up yet" in resp.data
+    assert b"Create your first job" in resp.data
 
 
 def test_dashboard_and_api_with_each_state(app, client):
@@ -362,21 +422,22 @@ def test_dashboard_and_api_with_each_state(app, client):
             )
     resp = client.get("/")
     assert resp.status_code == 200
-    for text in (b"Healthy", b"Failing", b"Overdue", b"Warning", b"Pending"):
+    for text in (b"Healthy", b"Failing", b"Overdue", b"Warning", b"Not scheduled"):
         assert text in resp.data
 
     data = client.get("/api/health").get_json()
     assert data["total"] == 5
     assert data["healthy"] == 1
     assert data["attention"] == 3
-    assert data["pending"] == 1
+    assert data["pending"] == 0
+    assert data["manual"] == 1
     assert data["generated_at"].endswith("Z")
     states = {j["name"]: j["state"] for j in data["jobs"]}
     assert states == {
         "ok": "healthy",
         "bad": "failing",
         "stale": "overdue",
-        "new": "pending",
+        "new": "manual",
         "warn": "warning",
     }
     first = data["jobs"][0]

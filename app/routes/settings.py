@@ -315,3 +315,28 @@ def remote_finish(job_id):
 def remote_cancel(job_id):
     _sign_ins.cancel(job_id)
     return jsonify(ok=True)
+
+
+# --- Deleting remotes ---
+
+
+@settings_bp.route("/remotes/delete", methods=["POST"])
+def delete_remote():
+    name = str(request.form.get("name") or "").strip()
+    rclone = current_app.config["RCLONE_CLIENT"]
+    try:
+        existing = rclone.list_remotes().get("remotes", [])
+    except Exception as exc:
+        flash(f"Could not reach rclone: {exc}", "danger")
+        return redirect(url_for("settings.index"))
+    # Only delete what rclone knows about; a stale or forged name does nothing.
+    if name not in existing:
+        flash(f"No remote named '{name}'.", "warning")
+        return redirect(url_for("settings.index"))
+    try:
+        rclone.delete_remote(name)
+    except Exception as exc:
+        flash(f"Could not delete remote '{name}': {exc}", "danger")
+    else:
+        flash(f"Remote '{name}' deleted.", "success")
+    return redirect(url_for("settings.index"))

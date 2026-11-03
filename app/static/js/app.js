@@ -20,6 +20,7 @@ document.addEventListener('submit', event => {
     event.preventDefault();
 
     const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('confirmModal'));
+    document.getElementById('confirm-title').textContent = form.dataset.confirmTitle || 'Are you sure?';
     document.getElementById('confirm-message').textContent = message;
     document.getElementById('confirm-ok').textContent = form.dataset.confirmLabel || 'Delete';
     document.getElementById('confirm-ok').onclick = () => {
@@ -52,21 +53,21 @@ function formatETA(seconds) {
     return s + 's';
 }
 
+// Says "Live", not "Connected": Settings has its own rclone connection status.
 function updateConnectionStatus(connected) {
     const el = document.getElementById('connection-status');
     if (!el) return;
-    if (connected) {
-        el.innerHTML = '<i class="bi bi-circle-fill text-success"></i> Connected';
-    } else {
-        el.innerHTML = '<i class="bi bi-circle-fill text-danger"></i> Disconnected';
-    }
+    const dot = document.createElement('i');
+    dot.className = 'bi bi-circle-fill ' + (connected ? 'text-success' : 'text-danger');
+    dot.setAttribute('aria-hidden', 'true');
+    el.replaceChildren(dot, ' ', connected ? 'Live' : 'Reconnecting...');
 }
 
 function updateRunningBadge(count) {
     const badge = document.getElementById('running-badge');
     if (!badge) return;
     if (count > 0) {
-        badge.textContent = count;
+        document.getElementById('running-count').textContent = count;
         badge.classList.remove('d-none');
     } else {
         badge.classList.add('d-none');

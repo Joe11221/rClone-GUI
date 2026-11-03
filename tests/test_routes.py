@@ -136,4 +136,4 @@ def test_templates_load_nothing_from_the_internet(client):
 def test_delete_confirmation_escapes_job_name(client):
     create_job(client, name="Joe's <b>photos</b>")
     page = client.get("/jobs/").data.decode()
-    assert "data-confirm=\"Delete job 'Joe&#39;s &lt;b&gt;photos&lt;/b&gt;'?\"" in page
+    assert "data-confirm=\"Delete job 'Joe&#39;s &lt;b&gt;photos&lt;/b&gt;'? Its schedule" in page

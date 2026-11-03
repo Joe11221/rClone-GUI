@@ -3,10 +3,10 @@
 // separately; every theme has both modes.
 const THEMES = {
     graphite:  { label: 'Graphite',     dark: ['#121316', '#7b97ff'], light: ['#f3f4f7', '#3f55d9'] },
-    glass:     { label: 'Liquid Glass', dark: ['#4f46e5', '#8be0ff'], light: ['#bfdbfe', '#1f5fe0'] },
-    keycaps:   { label: 'Keycaps',      dark: ['#1c1d3d', '#ff7ab8'], light: ['#fdf0d5', '#d81b6a'] },
-    terminal:  { label: 'Terminal',     dark: ['#030a05', '#39ff7a'], light: ['#eef2e6', '#0b7a32'] },
-    synthwave: { label: 'Synthwave',    dark: ['#2a0a4a', '#ff2e97'], light: ['#ffd1f0', '#c2006b'] },
+    glass:     { label: 'Liquid Glass', dark: ['#161a3a', '#8be0ff'], light: ['#eaf0fb', '#1f5fe0'] },
+    keycaps:   { label: 'Keycaps',      dark: ['#1c1d3d', '#ff7ab8'], light: ['#fdf0d5', '#c9145f'] },
+    terminal:  { label: 'Terminal',     dark: ['#0b0f0c', '#62d48c'], light: ['#eef2e6', '#0b7a32'] },
+    synthwave: { label: 'Synthwave',    dark: ['#120a24', '#5ce6f7'], light: ['#faf1fa', '#b0005d'] },
     brutalist: { label: 'Brutalist',    dark: ['#151515', '#ffd600'], light: ['#f3efe4', '#ffd600'] },
 };
 const MODES = { light: 'Light', dark: 'Dark', system: 'System' };
