@@ -1,12 +1,16 @@
 // Weekly bandwidth rules editor (see partials/bandwidth_editor.html).
 // The server re-checks every rule; this only has to be friendly. Remote names
 // and other text go in via textContent, never innerHTML.
+//
+// Show and hide with the d-none class, not style.display: Bootstrap's d-flex
+// is !important, so an inline "display: none" would lose to it.
 
 (function () {
     const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     const UNIT_BYTES = { KiB: 1024, MiB: 1048576, GiB: 1073741824, Mbit: 125000 };
     const UNIT_LABEL = { KiB: 'KiB/s', MiB: 'MiB/s', GiB: 'GiB/s', Mbit: 'Mbit/s' };
-    const SLOTS_PER_DAY = 48;  // half hours in the overview
+    const SLOTS_PER_DAY = 48;  // half hours in the preview
+    const LOCAL = '';  // the preview's "local disk only" choice
     const MAX_RULES = 50;
 
     function toMinutes(text) {
@@ -44,6 +48,10 @@
         return `${rule.value} ${UNIT_LABEL[rule.unit]}`;
     }
 
+    function clock(slot) {
+        return `${String(Math.floor(slot / 2)).padStart(2, '0')}:${slot % 2 ? '30' : '00'}`;
+    }
+
     function init(root) {
         const scoped = root.dataset.scoped === '1';
         const remotes = JSON.parse(root.dataset.remotes || '[]');
@@ -53,8 +61,10 @@
         const errorBox = root.querySelector('.bw-error');
         const output = root.querySelector('.bw-output');
         const addButton = root.querySelector('.bw-add');
-        const overview = root.querySelector('.bw-overview');
-        const grid = root.querySelector('.bw-grid');
+        const preview = root.querySelector('.bw-preview');
+        const timeline = root.querySelector('.bw-timeline');
+        const previewEmpty = root.querySelector('.bw-preview-empty');
+        const previewFor = root.querySelector('.bw-preview-for');  // absent without scopes
 
         const rows = () => [...list.querySelectorAll('.bw-rule')];
 
@@ -101,25 +111,58 @@
         function refreshRow(row) {
             const rule = readRow(row);
             row.classList.toggle('is-off', !rule.enabled);
-            row.querySelector('.bw-time-fields').style.display = rule.all_day ? 'none' : '';
+            row.querySelector('.bw-time-fields').classList.toggle('d-none', rule.all_day);
             const remotesBox = row.querySelector('.bw-remotes-box');  // absent without scopes
-            if (remotesBox) remotesBox.style.display = rule.scope === 'remotes' ? '' : 'none';
+            if (remotesBox) remotesBox.classList.toggle('d-none', rule.scope !== 'remotes');
 
             const start = toMinutes(rule.start);
             const end = toMinutes(rule.end);
-            row.querySelector('.bw-overnight').style.display =
-                !rule.all_day && start !== null && end !== null && end < start ? '' : 'none';
+            row.querySelector('.bw-overnight').classList.toggle(
+                'd-none', rule.all_day || start === null || end === null || end >= start);
 
-            const parts = [daysLabel(rule.days) || 'No days'];
-            parts.push(rule.all_day ? 'all day' : `${rule.start || '--:--'}–${rule.end || '--:--'}`);
-            parts.push(rule.value ? limitLabel(rule) : 'no limit set');
-            if (scoped) parts.push(scopeLabel(rule));
-            row.querySelector('.bw-summary').textContent = parts.join(' · ');
+            const when = [daysLabel(rule.days) || 'No days',
+                rule.all_day ? 'all day' : `${rule.start || '--:--'}–${rule.end || '--:--'}`];
+            const what = [rule.value ? limitLabel(rule) : 'no limit set'];
+            if (scoped) what.push(scopeLabel(rule));
+            row.querySelector('.bw-summary').textContent =
+                `${when.join(', ')}: ${what.join(' on ')}`;
         }
 
-        function refreshOverview() {
-            const active = rows().map(readRow)
+        // Which rules reach a job using these remotes. Same rules as the server.
+        function reaches(rule, names, hasRemote) {
+            if (rule.scope === 'all_remotes') return hasRemote;
+            if (rule.scope === 'remotes') return rule.remotes.some(name => names.includes(name));
+            return true;
+        }
+
+        // The preview's "for a job that uses" list: configured remotes, plus any a rule names.
+        function syncPreviewChoices(all) {
+            const names = [...remotes];
+            all.forEach(rule => rule.remotes.forEach(name => {
+                if (!names.includes(name)) names.push(name);
+            }));
+            const kept = previewFor.dataset.touched ? previewFor.value : null;
+            const named = all.find(rule => rule.scope === 'remotes' && rule.remotes.length);
+
+            previewFor.replaceChildren();
+            names.forEach(name => previewFor.add(new Option(`remote “${name}”`, name)));
+            previewFor.add(new Option('local disk only', LOCAL));
+            const values = [...previewFor.options].map(option => option.value);
+            previewFor.value = kept !== null && values.includes(kept) ? kept
+                : named ? named.remotes[0]
+                : names.length ? names[0] : LOCAL;
+        }
+
+        function refreshPreview() {
+            const all = rows().map(readRow);
+            if (previewFor) syncPreviewChoices(all);
+            const target = previewFor ? previewFor.value : null;
+            const names = target ? [target] : [];
+            const hasRemote = Boolean(target);
+
+            const active = all
                 .filter(rule => rule.enabled && !problem(rule))
+                .filter(rule => !previewFor || reaches(rule, names, hasRemote))
                 .map(rule => ({
                     days: rule.days,
                     start: rule.all_day ? 0 : toMinutes(rule.start),
@@ -127,56 +170,82 @@
                     speed: Number(rule.value) * UNIT_BYTES[rule.unit],
                     label: limitLabel(rule),
                 }));
-            overview.style.display = active.length ? '' : 'none';
-            grid.replaceChildren();
+
+            preview.classList.toggle('d-none', !all.length);
+            previewEmpty.classList.toggle('d-none', active.length > 0 || !all.length);
+            previewEmpty.textContent = 'No limit would apply to a job like this.';
+            timeline.replaceChildren();
             if (!active.length) return;
 
-            const corner = document.createElement('div');
-            grid.appendChild(corner);
-            for (let hour = 0; hour < 24; hour += 6) {  // each label spans 6 hours
-                const tick = document.createElement('div');
-                tick.className = 'bw-tick';
-                tick.textContent = String(hour).padStart(2, '0');
-                grid.appendChild(tick);
-            }
+            const header = document.createElement('div');
+            header.className = 'bw-line';
+            const ticks = document.createElement('div');
+            ticks.className = 'bw-ticks';
+            ['00', '06', '12', '18', '24'].forEach(text => {
+                const tick = document.createElement('span');
+                tick.textContent = text;
+                ticks.appendChild(tick);
+            });
+            header.append(document.createElement('span'), ticks);
+            timeline.appendChild(header);
+
             DAYS.forEach((name, day) => {
-                const label = document.createElement('div');
-                label.className = 'bw-day-label';
-                label.textContent = name;
-                grid.appendChild(label);
+                // The lowest limit for each half hour; neighbours with the same one become one bar.
+                const slots = [];
                 for (let slot = 0; slot < SLOTS_PER_DAY; slot++) {
-                    const minute = slot * 30;
                     let best = null;
                     active.forEach(rule => {
-                        if (windowActive(rule.days, rule.start, rule.end, day, minute)
+                        if (windowActive(rule.days, rule.start, rule.end, day, slot * 30)
                             && (!best || rule.speed < best.speed)) best = rule;
                     });
-                    const cell = document.createElement('div');
-                    cell.className = 'bw-cell' + (best ? ' limited' : '');
-                    const clock = `${String(Math.floor(minute / 60)).padStart(2, '0')}:${minute % 60 ? '30' : '00'}`;
-                    cell.title = `${name} ${clock}: ${best ? best.label : 'no limit'}`;
-                    grid.appendChild(cell);
+                    slots.push(best);
                 }
+                const track = document.createElement('div');
+                track.className = 'bw-track';
+                for (let from = 0; from < SLOTS_PER_DAY;) {
+                    let to = from + 1;
+                    while (to < SLOTS_PER_DAY && slots[to] === slots[from]) to++;
+                    if (slots[from]) {
+                        const bar = document.createElement('div');
+                        bar.className = 'bw-bar';
+                        bar.style.left = `${from / SLOTS_PER_DAY * 100}%`;
+                        bar.style.width = `${(to - from) / SLOTS_PER_DAY * 100}%`;
+                        bar.textContent = slots[from].label;
+                        bar.title = `${name} ${clock(from)}–${to === SLOTS_PER_DAY ? '24:00' : clock(to)}: ${slots[from].label}`;
+                        track.appendChild(bar);
+                    }
+                    from = to;
+                }
+                const line = document.createElement('div');
+                line.className = 'bw-line';
+                const label = document.createElement('span');
+                label.className = 'bw-day-label';
+                label.textContent = name;
+                line.append(label, track);
+                timeline.appendChild(line);
             });
         }
 
         function refresh() {
             rows().forEach(refreshRow);
-            empty.style.display = rows().length ? 'none' : '';
+            empty.classList.toggle('d-none', rows().length > 0);
             addButton.disabled = rows().length >= MAX_RULES;
-            refreshOverview();
+            refreshPreview();
         }
 
         // --- Building rows ---
 
-        function addRow(rule) {
-            const row = template.content.firstElementChild.cloneNode(true);
-            const days = rule.days || [0, 1, 2, 3, 4, 5, 6];
+        function setDays(row, days) {
             row.querySelectorAll('.bw-day').forEach(button => {
                 const on = days.includes(+button.dataset.day);
                 button.classList.toggle('active', on);
                 button.setAttribute('aria-pressed', String(on));
             });
+        }
+
+        function addRow(rule) {
+            const row = template.content.firstElementChild.cloneNode(true);
+            setDays(row, rule.days || [0, 1, 2, 3, 4, 5, 6]);
             row.querySelector('.bw-enabled').checked = rule.enabled !== false;
             row.querySelector('.bw-allday').checked = rule.all_day !== false;
             row.querySelector('.bw-start').value = rule.start || '09:00';
@@ -184,7 +253,6 @@
             row.querySelector('.bw-value').value = rule.value ?? '';
             row.querySelector('.bw-unit').value = rule.unit || 'MiB';
 
-            const scopeRow = row.querySelector('.bw-scope-row');
             if (scoped) {
                 row.querySelector('.bw-scope').value = rule.scope || 'everything';
                 const chosen = rule.remotes || [];
@@ -206,9 +274,10 @@
                     label.append(input, text);
                     box.appendChild(label);
                 });
-                row.querySelector('.bw-no-remotes').style.display = names.length ? 'none' : '';
+                row.querySelector('.bw-no-remotes').classList.toggle('d-none', names.length > 0);
             } else {
-                scopeRow.remove();
+                row.querySelector('.bw-scope-row').remove();
+                row.querySelector('.bw-remotes-box').remove();
             }
             list.appendChild(row);
             refreshRow(row);
@@ -225,12 +294,7 @@
                 day.classList.toggle('active');
                 day.setAttribute('aria-pressed', String(day.classList.contains('active')));
             } else if (preset) {
-                const wanted = preset.dataset.days.split(',').map(Number);
-                row.querySelectorAll('.bw-day').forEach(button => {
-                    const on = wanted.includes(+button.dataset.day);
-                    button.classList.toggle('active', on);
-                    button.setAttribute('aria-pressed', String(on));
-                });
+                setDays(row, preset.dataset.days.split(',').map(Number));
             } else if (event.target.closest('.bw-remove')) {
                 row.remove();
             } else {
@@ -241,7 +305,8 @@
         });
 
         root.addEventListener('input', event => {
-            if (!event.target.closest('.bw-rule')) return;
+            if (event.target === previewFor) previewFor.dataset.touched = '1';
+            else if (!event.target.closest('.bw-rule')) return;
             errorBox.style.display = 'none';
             refresh();
         });

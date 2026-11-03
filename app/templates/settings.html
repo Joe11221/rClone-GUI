@@ -43,14 +43,9 @@
                     {% endif %}
                 </p>
                 <form action="{{ url_for('settings.save_bandwidth') }}" method="post">
-                    {% with bw_rules=bandwidth_rules, bw_scoped=true, bw_remotes=remotes %}
+                    {% with bw_rules=bandwidth_rules, bw_scoped=true, bw_remotes=remotes, bw_save=true %}
                         {% include "partials/bandwidth_editor.html" %}
                     {% endwith %}
-                    <div class="mt-4">
-                        <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-check-lg"></i> Save limits
-                        </button>
-                    </div>
                 </form>
                 <div class="form-text mt-3">
                     Where several rules apply at once, the lowest limit wins. rclone shares one speed limit

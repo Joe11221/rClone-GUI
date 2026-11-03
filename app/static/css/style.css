@@ -1589,14 +1589,17 @@ code {
     padding-right: 0.25rem;
 }
 
-
 /* ---------- Bandwidth rules ---------- */
+
+.bw-editor {
+    max-width: 62rem;
+}
 
 .bw-rule {
     background: var(--app-surface-2);
     border: 1px solid var(--app-border);
     border-radius: 0.6rem;
-    padding: 1rem;
+    padding: 0.75rem 1rem 0.9rem;
 }
 
 .bw-rule.is-off > :not(:first-child),
@@ -1604,36 +1607,85 @@ code {
     opacity: 0.55;
 }
 
-.bw-time-fields .form-control {
-    width: 8.5rem;
+.bw-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.5rem;
+    align-items: flex-end;
 }
 
-.bw-grid {
-    display: grid;
-    grid-template-columns: 2.25rem repeat(48, minmax(0, 1fr));
-    gap: 1px;
-    align-items: center;
-}
-
-.bw-tick {
-    grid-column: span 12;
-    font-size: 0.65rem;
+.bw-label {
+    display: block;
+    font-size: 0.75rem;
     color: var(--app-muted);
+    margin-bottom: 0.2rem;
 }
 
-.bw-day-label {
+.bw-time-fields .form-control {
+    width: 7.5rem;
+}
+
+.bw-limit {
+    width: 12rem;
+}
+
+.bw-limit .bw-value {
+    min-width: 0;
+}
+
+.bw-limit .bw-unit {
+    flex: 0 0 6.5rem;
+}
+
+.bw-scope {
+    min-width: 17rem;
+}
+
+.bw-preview-for {
+    width: auto;
+}
+
+/* Preview: one bar per day, split where the limit changes. */
+
+.bw-line {
+    display: grid;
+    grid-template-columns: 2.5rem 1fr;
+    align-items: center;
+    margin-bottom: 3px;
+}
+
+.bw-day-label,
+.bw-ticks {
     font-size: 0.7rem;
     color: var(--app-muted);
 }
 
-.bw-cell {
-    height: 0.9rem;
-    background: var(--app-surface-2);
-    border: 1px solid var(--app-border);
-    border-radius: 2px;
+.bw-ticks {
+    display: flex;
+    justify-content: space-between;
 }
 
-.bw-cell.limited {
+.bw-track {
+    position: relative;
+    height: 1.4rem;
+    background: var(--app-surface-2);
+    border: 1px solid var(--app-border);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.bw-bar {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    padding: 0 0.4rem;
     background: var(--app-accent);
-    border-color: var(--app-accent);
+    color: var(--app-accent-contrast);
+    font-size: 0.72rem;
+    font-weight: 600;
+    line-height: 1.3rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-shadow: inset -1px 0 0 var(--app-bg);
 }
