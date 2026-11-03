@@ -24,21 +24,22 @@ It runs in Docker on a home server, or as a Windows app for a desktop PC. Both
 use the same web UI.
 
 > [!CAUTION]
-> **This app has no authentication.** Anyone who can reach its port can browse
-> the mounted filesystem, create jobs, and run `sync`/`move` operations against
-> your data (which is mounted **read-write**). Cross-site requests from other
-> websites are rejected, but that doesn't protect against direct access.
+> Anyone who can log in can browse the mounted filesystem, create jobs, and run
+> `sync`/`move` operations against your data (which is mounted **read-write**).
+> Login is on by default: the first visit asks you to choose a password.
 >
 > - By default the port is published on `127.0.0.1` only.
-> - Only set `BIND_ADDRESS=0.0.0.0` on a network you fully trust.
-> - **Never expose it to the internet.** If you need remote access, put it
->   behind a VPN (WireGuard, Tailscale) or a reverse proxy that enforces
->   authentication.
+> - Only set `BIND_ADDRESS=0.0.0.0` on a network you trust.
+> - **Never expose it to the internet directly.** For remote access, use a VPN
+>   (WireGuard, Tailscale) or a reverse proxy that enforces authentication.
+>   See [Security notes](#security-notes).
+> - `AUTH_MODE=none` turns login off. It is an explicit opt-out, not a default.
 
 A Flask web GUI for managing [rclone](https://rclone.org) backup jobs, on a home
 server with Docker or on a Windows PC as a [tray app](#windows-app). Create sync/copy/move jobs, schedule them with cron, watch live
 transfer progress, and browse run history — from a browser, or from the Windows
-app's own window.
+app's own window. It also checks that each backup runs on time and succeeds,
+and alerts you when one doesn't.
 
 This is a standalone app (not the upstream rclone web GUI). It never shells out
 to rclone; every operation goes through the **rclone RC HTTP API**.
@@ -81,8 +82,39 @@ to rclone; every operation goes through the **rclone RC HTTP API**.
   newest failures; the run's history page lists them all, grouped by cause,
   with a filter (by file or message), paging, and a CSV export. Up to 50,000
   failures are kept per run.
+- **Backup health** — the dashboard opens with a summary of every job's state:
+  `healthy`, `failing`, `overdue`, `warning` (its last run deleted an unusual
+  number of files), or `pending`. Each job also shows its last success, next
+  run, failures in a row, and the 7-day success rate. Deadlines come from the
+  cron schedule, or from a per-job "Must succeed at least every N hours".
+  `GET /api/health` returns the same data as JSON.
+  - `failing`: a run has failed or been held since the last success.
+  - `overdue`: no success by the deadline. For a scheduled job, that is the
+    first cron time after the last success plus 60 minutes of grace. A running
+    job is not overdue against its schedule.
+  - `warning`: the last successful run deleted more than 100 files and more
+    than ten times the usual number (the median of the ten runs before it).
+  - `healthy` shows the time of the last success. `pending` means the job has
+    no successful run yet and no failure to report.
+- **Safety checks** — before a sync starts, its source is read. If the source
+  can't be read or is empty, the run is `held` and rclone is not started. Each
+  sync also has a delete limit (default 1000 files). A held or delete-limited run
+  has a **Run anyway** button. See [Keeping backups safe](#keeping-backups-safe).
+- **Skipped runs** — if a scheduled run comes due while the previous run of the
+  same job is still going, it is recorded as `skipped` instead of disappearing.
+- **Notifications** — alerts through [Apprise](https://github.com/caronc/apprise)
+  to ntfy, Discord, Telegram, email, Gotify and 100+ more. You choose which events
+  notify on the Settings page. Failure messages list the top causes, and a
+  "Send test notification" button checks the setup.
+- **Heartbeat** — pings a dead-man's-switch URL (Healthchecks.io, an Uptime Kuma
+  push monitor) every N minutes while the app and rclone are working. If either
+  one dies, the pings stop and your monitor alerts you.
+- **Login** — a single password by default. Behind a reverse proxy (Authelia,
+  Authentik, oauth2-proxy), the app can trust the proxy's login instead. See
+  [Security notes](#security-notes).
 - **History** — every run is recorded with final stats and status
-  (`completed`/`failed`/`stopped`/`interrupted`).
+  (`completed`/`failed`/`stopped`/`interrupted`/`held`/`skipped`). Each run also
+  records its deletes, checks, and the exact settings it used.
 - **Auto-resume** — per-job toggle. Orphaned `running` records are
   re-dispatched on container restart; failed runs retry after a delay up to
   `max_retries` (default 3). Each retry is a new history record linked via
@@ -103,6 +135,32 @@ to rclone; every operation goes through the **rclone RC HTTP API**.
 - **Themes** — eight colour themes (dark and light) from the **Theme** menu in
   the navigation bar. The choice is stored in your browser, so each browser
   picks its own.
+
+## Keeping backups safe
+
+`rclone sync` makes the destination match the source, so it deletes files there
+that the source no longer has. If the source disappears (a dropped NFS or SMB
+mount, an unplugged drive), it can look empty, and a sync would delete the whole
+backup.
+
+Two checks stop that:
+
+- **Source check.** Before a sync starts, the app lists the top level of the
+  source. If that fails or comes back empty, the run is **held**. rclone is not
+  started, and the run page says why.
+- **Delete limit.** A sync refuses to delete more than a set number of files in
+  one run (default 1000, set per job; `-1` turns it off). It is passed to rclone
+  as `--max-delete`. A run stopped this way is marked failed, with the reason.
+
+Neither kind of run is retried automatically, even when auto-resume is on. Check
+the run before you run the job again.
+
+Copy and move jobs are not checked, because they can't delete files at the
+destination.
+
+**Run anyway** (on a held or delete-limited run) starts the job once with both
+checks off. It asks for confirmation first. Use it only when you know the
+deletions are expected.
 
 ## Why size + mixed ordering?
 
@@ -148,8 +206,14 @@ syncs keep running; choose **Quit** from the tray icon's menu to exit.
 If the PC was asleep or off when a schedule came due, the run starts once when
 the app is next running, however many were missed. The PC stays awake during a
 transfer, but the app can't wake a sleeping PC, and schedules only run while you
-are logged in. Don't use it on a PC shared with people you don't trust: the web
-UI has no login, and other accounts on the PC can reach it.
+are logged in.
+
+The Windows app has no login by default. It listens on loopback only and is
+meant for one user. Other accounts on the same PC can still reach that port, so
+on a PC shared with people you don't trust, turn login on. Open
+`%LOCALAPPDATA%\rClone GUI\settings.json`, add `"auth_mode": "password"`, quit the
+app from the tray, and start it again. The window will then ask you to choose a
+password.
 
 Data is kept in `%LOCALAPPDATA%\rClone GUI` and is left in place on uninstall.
 Password-encrypted rclone configs aren't supported yet.
@@ -164,22 +228,27 @@ Requires Docker with the Compose plugin, and an existing rclone config
 
 ```bash
 cp .env.example .env
-python3 -c "import secrets; print(secrets.token_hex(32))"   # paste into SECRET_KEY
-# Edit .env: SECRET_KEY, TIMEZONE, RCLONE_CONFIG, DATA_PATH, (PORT, BIND_ADDRESS)
+# Edit .env: TIMEZONE, RCLONE_CONFIG, DATA_PATH, (PORT, BIND_ADDRESS)
 docker compose up -d --build
 ```
 
-Then open `http://127.0.0.1:${PORT}` (default `8080`). The container
-auto-restarts (`unless-stopped`).
+Then open `http://127.0.0.1:${PORT}` (default `8080`). The first visit asks you
+to choose a password, so do that before anyone else can reach the port. The
+container auto-restarts (`unless-stopped`).
 
-The container **refuses to start without a real `SECRET_KEY`**; placeholder
-values are rejected.
+`SECRET_KEY` is optional. If it is empty, the app generates one on first start
+and keeps it in `./data`, so logins survive restarts. Placeholder values such as
+`change-me` are rejected.
 
 ### Configuration (`.env`)
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `SECRET_KEY` | — (**required**) | Flask secret key. Generate a random value. |
+| `SECRET_KEY` | generated | Signs login sessions. Leave empty to have one generated and saved in `./data`, or set a long random value (`python3 -c "import secrets; print(secrets.token_hex(32))"`). Placeholder values are refused. |
+| `AUTH_MODE` | `password` | `password`: one password, chosen on first visit. `proxy`: trust the login from a reverse proxy (see [Security notes](#security-notes)). `none`: no login at all. |
+| `AUTH_PROXY_HEADER` | `Remote-User` | Header the reverse proxy sets to the logged-in user. Only used when `AUTH_MODE=proxy`. |
+| `SECURE_COOKIES` | `false` | Set to `true` when the app is served over https, so the login cookie is never sent over plain http. |
+| `PUBLIC_URL` | — | Base address for links in notifications, e.g. `http://nas.lan:8080`. The value saved on the Settings page takes precedence. Passed through by `docker-compose.yml`. |
 | `PORT` | `8080` | Host port for the web GUI |
 | `BIND_ADDRESS` | `127.0.0.1` | Host address the port is published on. `0.0.0.0` exposes it to your whole network — see the warning above. |
 | `TIMEZONE` | `UTC` | IANA timezone (e.g. `America/New_York`) used to display times **and** to interpret cron schedules |
@@ -207,6 +276,15 @@ DATA_PATH=/mnt
   at the narrowest directory that works for you.
 
 ### Upgrading
+
+This release adds login and safety checks, so two things change on upgrade:
+
+- After upgrading, the first visit asks you to choose a password. To keep the
+  old no-login behaviour, set `AUTH_MODE=none` in `.env` and restart.
+- Existing sync jobs get a delete limit of 1000 files. If a job legitimately
+  deletes more than that in one run, raise the limit on the job form, or set it
+  to `-1` for no limit. A run that hits the limit is marked failed. **Run
+  anyway** starts it once without the limit.
 
 The database schema is created and upgraded by the app itself on startup
 (`db.create_all()` plus `_ensure_columns()` in `app/__init__.py`), so there is
@@ -250,8 +328,9 @@ Key design rules:
 ### How a run works
 
 1. Start -> `POST /ops/start/<job_id>` -> `JobRunner.start_job()`
-2. A `RunHistory` row is created (status `running`) and rclone is called
-   with `_async=true` and `_group=job_{run_id}`
+2. A `RunHistory` row is created (status `running`). For a sync, the source
+   is checked first and the run is `held` if the check fails. Then rclone is
+   called with `_async=true` and `_group=job_{run_id}`
 3. The SSE endpoint polls `core/stats?group=job_{run_id}` (every 2s while
    active, 5s when idle)
 4. A 10-second monitor copies new per-file failures into the DB while a run is
@@ -263,22 +342,31 @@ Key design rules:
 ```
 app/
 ├── __init__.py           # App factory, startup checks, _ensure_columns() schema upgrades
-├── config.py             # Env-based config (SECRET_KEY, TIMEZONE, RCLONE_RC_URL, ...)
+├── auth.py               # Login (password / proxy / none), sessions, lockout, secret key
+├── config.py             # Env-based config (SECRET_KEY, AUTH_MODE, TIMEZONE, RCLONE_RC_URL, ...)
 ├── extensions.py         # SQLAlchemy instance
 ├── models.py             # Job, Schedule, RunHistory (SQLite)
 ├── rclone_client.py      # HTTP wrapper for rclone RC API
 ├── routes/
+│   ├── health.py         # GET /api/health: backup health as JSON
 │   ├── jobs.py           # CRUD for job definitions + directory browse API
 │   ├── operations.py     # Start/stop/resume/status of running syncs
 │   ├── schedules.py      # Cron schedule CRUD + enable/disable
 │   ├── history.py        # Past run list + detail view
 │   ├── run_errors.py     # Per-run failure list (JSON, paged), summary, CSV export
 │   ├── sse.py            # SSE endpoint — polls rclone directly (no bg thread)
-│   └── settings.py       # Remotes list, global bandwidth rules
+│   └── settings.py       # Remotes, bandwidth rules, notification and heartbeat settings
 ├── services/
-│   ├── job_runner.py     # Core orchestration: start/stop jobs, finalize runs
+│   ├── app_settings.py   # Key/value settings edited in the UI (stored in SQLite)
+│   ├── bandwidth.py      # Weekly bandwidth rules and the single rclone speed limit
+│   ├── events.py         # In-process event bus: run finished/held/skipped, health changed
+│   ├── health.py         # Backup health rules: per-job state, deadlines, 7-day success rate
+│   ├── job_runner.py     # Core orchestration: start/stop jobs, safety checks, finalize runs
+│   ├── notifier.py       # Notifications (Apprise) and the heartbeat ping
+│   ├── remotes.py        # Creating rclone remotes from the GUI, including OAuth sign-in
 │   ├── run_errors.py     # Turns rclone transfer errors into stored, grouped failures
-│   └── scheduler_service.py  # APScheduler cron triggers
+│   ├── scheduler_service.py  # APScheduler cron triggers and skipped-run records
+│   └── suspects.py       # Suggests folders to exclude while a run is in progress
 ├── security.py           # Cross-site POST and ALLOWED_HOSTS checks
 ├── templates/            # Jinja2, Bootstrap 5 (themed via data-theme)
 └── static/               # CSS, vendored Bootstrap, vanilla JS (SSE, errors, themes)
@@ -287,15 +375,30 @@ packaging/                # PyInstaller spec, Inno Setup script, build.ps1
 tests/                    # pytest suite (no rclone needed)
 ```
 
-Tech stack: Flask 3.1, SQLAlchemy (SQLite), APScheduler 3.10, Gunicorn +
-gevent, Bootstrap 5 (vendored, no CDN) and vanilla JS (no build tools). The
+Tech stack: Flask 3.1, SQLAlchemy (SQLite), APScheduler 3.10, Apprise
+(notifications), Gunicorn + gevent, Bootstrap 5 (vendored, no CDN) and vanilla JS (no build tools). The
 Windows app adds pywebview, pystray, Pillow and PyInstaller.
 
 ## Security notes
 
-- **No authentication** — intended for a trusted network only. Blueprints are
-  structured so Flask-Login can be added later (`@login_required`).
-- **No CSRF protection** (would need Flask-WTF).
+- **Login** (`AUTH_MODE`):
+  - `password` (default): one shared password, chosen on the first visit. Login
+    sessions last 30 days. Five failed attempts from one address lock that
+    address out for 15 minutes. Changing the password on the Settings page signs
+    out every other browser.
+  - `proxy`: the app trusts the user named in the `AUTH_PROXY_HEADER` header
+    (default `Remote-User`), which a reverse proxy such as Authelia, Authentik or
+    oauth2-proxy sets after it has logged the user in. Requests without the
+    header get `401`. The app's port must then be reachable only by that proxy,
+    or anyone can send the header.
+  - `none`: no login. The web UI shows a warning banner.
+- **Lockouts are per client address.** Behind a reverse proxy in `password`
+  mode, every client appears to come from the proxy's address, so one person's
+  failed attempts lock everyone out for 15 minutes.
+- **Cross-site requests are rejected** (`app/security.py`). A browser POST that
+  another website sent is refused, based on the `Sec-Fetch-Site` or `Origin`
+  header. Requests without those headers (scripts, `curl`) are not covered by
+  that check, so they still need a login.
 - The directory browser (`/jobs/api/browse`) and job `extra_flags` let any
   user of the app list arbitrary paths and set arbitrary rclone options.
 - The data path is mounted read-write, and mounted rclone config contains your
@@ -324,8 +427,10 @@ Gotchas:
 
 - `exclude_patterns`/`extra_flags` are JSON strings in SQLite; use
   `job.get_excludes()` / `job.get_extra_flags()`.
-- `RunHistory` does not snapshot job config; the detail page shows the
-  *current* job config.
+- Runs record the settings they were dispatched with (`config_snapshot`),
+  shown under "Settings used for this run" on the run page. Runs from before
+  this release have no snapshot, so for those the job's *current* settings are
+  the only reference.
 - Move operations may not resume cleanly after an interruption (partial file
   relocation); a warning is shown in the job form.
 - New columns on existing tables need an `ALTER TABLE` entry in

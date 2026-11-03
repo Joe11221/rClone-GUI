@@ -60,7 +60,7 @@ def test_will_retry_and_stopped_ignored(app, sent, job):
 
 def test_delete_limit_is_held(app, sent, job):
     emit(app, "run_finished", **finished(job, guard="delete_limit"))
-    assert sent[0][1] == "Unusual deletes: Photos"
+    assert sent[0][1] == "Backup stopped at delete limit: Photos"
     assert sent[0][3] == "failure"
 
 

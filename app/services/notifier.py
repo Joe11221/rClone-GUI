@@ -155,7 +155,7 @@ class Notifier:
                     )
                     return (
                         "held",
-                        f"Unusual deletes: {name}",
+                        f"Backup stopped at delete limit: {name}",
                         self._body(data, reason, run=True),
                     )
                 reason = data.get("error_message") or f"Run {status}."

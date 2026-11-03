@@ -93,9 +93,10 @@ rClone GUI.exe (app window: pywebview + WebView2; tray icon: pystray; no gevent)
   others are marked failed.
 - The window has no right-click menu, because pywebview ties it to debug mode.
   Ctrl+C and Ctrl+V still work in text fields.
-- The web UI has no login, and the local server behind the window is still
-  reachable from a browser. Other accounts on the same PC can reach its loopback
-  port, so don't use it on a PC shared with people you don't trust.
+- The web UI has no login unless `"auth_mode": "password"` is set in
+  `settings.json`. The local server behind the window is still reachable from a
+  browser, and other accounts on the same PC can reach its loopback port, so
+  turn login on for a PC shared with people you don't trust.
 - rclone configs encrypted with a password aren't supported yet. `rcd` runs
   without a console, so it can't ask for the password.
 - The installer is unsigned, so SmartScreen warns on first run until a
