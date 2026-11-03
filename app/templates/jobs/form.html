@@ -1,22 +1,34 @@
 {% extends "base.html" %}
 {% block title %}{{ 'Edit' if job else 'Create' }} Job - rClone GUI{% endblock %}
 
+{% macro field_errors(key) %}
+    {% if errors.get(key) %}
+        {% set msgs = errors[key] if errors[key] is not string else [errors[key]] %}
+        <div class="invalid-feedback d-block" id="{{ key }}-error" role="alert">
+            {% if msgs | length > 1 %}
+            <ul class="mb-0 ps-3">{% for m in msgs %}<li>{{ m }}</li>{% endfor %}</ul>
+            {% else %}{{ msgs[0] }}{% endif %}
+        </div>
+    {% endif %}
+{% endmacro %}
+
 {% block content %}
+{% set dest_label = f.destination or 'the destination' %}
 <div class="row justify-content-center">
     <div class="col-lg-8">
-        <h4 class="mb-3">
+        <h1 class="h4 mb-3">
             <i class="bi bi-{{ 'pencil' if job else 'plus-lg' }}"></i>
             {{ 'Edit' if job else 'Create' }} Job
-        </h4>
+        </h1>
 
-        <form method="post">
+        <form method="post" id="job-form">
             <div class="card mb-3">
-                <div class="card-header">Basic Settings</div>
+                <div class="card-header"><h2 class="h6 mb-0">Basics</h2></div>
                 <div class="card-body">
                     <div class="mb-3">
                         <label for="name" class="form-label">Job Name</label>
                         <input type="text" class="form-control" id="name" name="name"
-                               value="{{ job.name if job else '' }}" required
+                               value="{{ f.name }}" required
                                placeholder="e.g., Full Backup to pCloud">
                     </div>
 
@@ -24,27 +36,29 @@
                         <div class="col-md-5 mb-3">
                             <label for="source" class="form-label">Source</label>
                             <div class="input-group">
-                                <input type="text" class="form-control" id="source" name="source"
-                                       value="{{ job.source if job else '' }}" required
+                                <input type="text" class="form-control font-monospace" id="source" name="source"
+                                       value="{{ f.source }}" required
                                        placeholder="e.g., {{ 'C:\\Data\\Photos' if is_windows else '/mnt/data/photos' }}">
                                 <button type="button" class="btn btn-outline-secondary"
-                                        onclick="openBrowser('source')" title="Browse directories">
+                                        onclick="openBrowser('source')" title="Browse directories"
+                                        aria-label="Browse for the source folder">
                                     <i class="bi bi-folder2-open"></i>
                                 </button>
                             </div>
                             <div class="form-text">Local path or remote:path. You can also type a new path.</div>
                         </div>
                         <div class="col-md-2 mb-3 d-flex align-items-center justify-content-center">
-                            <i class="bi bi-arrow-right display-6 text-muted"></i>
+                            <i class="bi bi-arrow-right fs-3 text-muted" aria-hidden="true"></i>
                         </div>
                         <div class="col-md-5 mb-3">
                             <label for="destination" class="form-label">Destination</label>
                             <div class="input-group">
-                                <input type="text" class="form-control" id="destination" name="destination"
-                                       value="{{ job.destination if job else '' }}" required
+                                <input type="text" class="form-control font-monospace" id="destination" name="destination"
+                                       value="{{ f.destination }}" required
                                        placeholder="e.g., pcloud:Backups/">
                                 <button type="button" class="btn btn-outline-secondary"
-                                        onclick="openBrowser('destination')" title="Browse directories">
+                                        onclick="openBrowser('destination')" title="Browse directories"
+                                        aria-label="Browse for the destination folder">
                                     <i class="bi bi-folder2-open"></i>
                                 </button>
                             </div>
@@ -52,58 +66,171 @@
                             <div class="form-text">
                                 Quick-select remote:
                                 {% for r in remotes %}
-                                    <a href="#" onclick="browseRemote('destination', '{{ r }}'); return false;">{{ r }}</a>{{ ', ' if not loop.last }}
+                                    <a href="#" class="font-monospace" data-remote="{{ r }}">{{ r }}</a>{{ ', ' if not loop.last }}
                                 {% endfor %}
                             </div>
                             {% endif %}
                         </div>
                     </div>
 
+                    <fieldset class="mb-3 jf-types" id="sync-type-group">
+                        <legend class="form-label fs-6">What should this job do?</legend>
+                        <div class="jf-type-grid">
+                            <label class="jf-type" for="sync_type_copy">
+                                <input type="radio" class="form-check-input" name="sync_type" id="sync_type_copy"
+                                       value="copy" {{ 'checked' if f.sync_type == 'copy' }}>
+                                <span class="jf-type-body">
+                                    <span class="jf-type-name">Copy</span>
+                                    <span class="jf-type-note">Adds new and changed files to <code data-dest-name{% if not f.destination %} class="jf-dest-placeholder"{% endif %}>{{ dest_label }}</code>. Nothing is deleted.</span>
+                                </span>
+                            </label>
+                            <label class="jf-type" for="sync_type_sync">
+                                <input type="radio" class="form-check-input" name="sync_type" id="sync_type_sync"
+                                       value="sync" {{ 'checked' if f.sync_type == 'sync' }}>
+                                <span class="jf-type-body">
+                                    <span class="jf-type-name">Sync</span>
+                                    <span class="jf-type-note">Makes <code data-dest-name{% if not f.destination %} class="jf-dest-placeholder"{% endif %}>{{ dest_label }}</code> match the source. Files at <code data-dest-name{% if not f.destination %} class="jf-dest-placeholder"{% endif %}>{{ dest_label }}</code> that aren't in the source are deleted.</span>
+                                </span>
+                            </label>
+                            <label class="jf-type" for="sync_type_move">
+                                <input type="radio" class="form-check-input" name="sync_type" id="sync_type_move"
+                                       value="move" {{ 'checked' if f.sync_type == 'move' }}>
+                                <span class="jf-type-body">
+                                    <span class="jf-type-name">Move</span>
+                                    <span class="jf-type-note">Transfers files to <code data-dest-name{% if not f.destination %} class="jf-dest-placeholder"{% endif %}>{{ dest_label }}</code>, then deletes them from the source.</span>
+                                </span>
+                            </label>
+                        </div>
+                    </fieldset>
+
+                    <div class="alert alert-warning py-2 small mb-3" data-move-resume-warning role="status"
+                         {% if not (f.sync_type == 'move' and f.auto_resume) %}hidden{% endif %}>
+                        <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>
+                        Move with auto-resume: a move that was interrupted partway may not resume correctly.
+                        Files already moved are gone from the source.
+                    </div>
+
+                    <fieldset class="mb-0" id="safety-group" {% if f.sync_type != 'sync' %}hidden{% endif %}>
+                        <legend class="form-label fs-6">Safety</legend>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label for="max_delete" class="form-label">Delete limit</label>
+                                <input type="number" class="form-control" id="max_delete" name="max_delete"
+                                       value="{{ f.max_delete }}" min="-1" aria-describedby="max_delete_help">
+                                <div class="form-text" id="max_delete_help">Stops the sync once it has deleted this many files from <code data-dest-name{% if not f.destination %} class="jf-dest-placeholder"{% endif %}>{{ dest_label }}</code>. Guards against a missing or empty source. -1 means no limit.</div>
+                            </div>
+                        </div>
+                    </fieldset>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header"><h2 class="h6 mb-0"><i class="bi bi-clock"></i> Schedule</h2></div>
+                <div class="card-body">
                     <div class="mb-3">
-                        <label for="sync_type" class="form-label">Sync Type</label>
-                        <select class="form-select" id="sync_type" name="sync_type">
-                            <option value="sync" {{ 'selected' if job and job.sync_type == 'sync' }}>
-                                Sync (mirror source to destination, deletes extras)
-                            </option>
-                            <option value="copy" {{ 'selected' if job and job.sync_type == 'copy' }}>
-                                Copy (copy files without deleting)
-                            </option>
-                            <option value="move" {{ 'selected' if job and job.sync_type == 'move' }}>
-                                Move (move files, delete from source)
-                            </option>
-                        </select>
+                        <label for="schedule_cron" class="form-label">Cron expression</label>
+                        <input type="text" class="form-control font-monospace{{ ' is-invalid' if errors.get('schedule_cron') }}"
+                               id="schedule_cron" name="schedule_cron" value="{{ f.schedule_cron }}"
+                               placeholder="min hour dom mon dow, e.g. 0 2 * * *" autocomplete="off" spellcheck="false"
+                               aria-describedby="schedule_cron_help cron-preview{{ ' schedule_cron-error' if errors.get('schedule_cron') }}"
+                               {% if errors.get('schedule_cron') %}aria-invalid="true"{% endif %}>
+                        {{ field_errors('schedule_cron') }}
+                        <div class="form-text" id="cron-preview" aria-live="polite">
+                            {% if f.schedule_cron and not errors.get('schedule_cron') %}{{ f.schedule_cron | cron_text }}{% endif %}
+                        </div>
+                        <div class="form-text" id="schedule_cron_help">
+                            Leave empty to run this job only when you start it. Times are in {{ schedule_tz }}.
+                        </div>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 mb-3" role="group" aria-label="Schedule presets">
+                        <button type="button" class="btn btn-sm btn-outline-secondary cron-preset" data-cron="0 2 * * *">Daily 2 AM</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary cron-preset" data-cron="0 */6 * * *">Every 6 hours</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary cron-preset" data-cron="0 3 * * 1-5">Weekdays 3 AM</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary cron-preset" data-cron="0 0 * * 0">Weekly Sun midnight</button>
+                    </div>
+                    <div class="form-check form-switch mb-0">
+                        <input type="checkbox" class="form-check-input" id="schedule_enabled" name="schedule_enabled"
+                               role="switch" {{ 'checked' if f.schedule_enabled }}>
+                        <label class="form-check-label" for="schedule_enabled">Schedule enabled</label>
                     </div>
                 </div>
             </div>
 
             <div class="card mb-3">
-                <div class="card-header">Performance</div>
+                <div class="card-header"><h2 class="h6 mb-0">When to worry</h2></div>
                 <div class="card-body">
+                    <div class="mb-3">
+                        <label for="max_age_hours" class="form-label">Must succeed at least every (hours)</label>
+                        <input type="number" class="form-control" id="max_age_hours" name="max_age_hours"
+                               value="{{ f.max_age_hours }}" min="1" aria-describedby="max_age_help">
+                        <div class="form-text" id="max_age_help">Leave blank to expect a successful run after every scheduled time. Set it for jobs without a schedule, or to allow more slack.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input type="checkbox" class="form-check-input" id="auto_resume" name="auto_resume"
+                                   role="switch" {{ 'checked' if f.auto_resume }}>
+                            <label class="form-check-label" for="auto_resume">
+                                Start the job again after a failure or interruption
+                            </label>
+                        </div>
+                        <div class="form-text">Also picks up jobs that were interrupted by an app restart.</div>
+                    </div>
+                    <div class="row" id="resume-options"{% if not f.auto_resume %} hidden{% endif %}>
+                        <div class="col-md-6 mb-3">
+                            <label for="max_retries" class="form-label">Resume attempts after an interruption</label>
+                            <input type="number" class="form-control" id="max_retries" name="max_retries"
+                                   value="{{ f.max_retries }}" min="1" max="20" aria-describedby="max_retries_help">
+                            <div class="form-text" id="max_retries_help">How many times to start the job again after a failed or interrupted run.</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="retry_delay_seconds" class="form-label">Wait before each attempt (seconds)</label>
+                            <input type="number" class="form-control" id="retry_delay_seconds" name="retry_delay_seconds"
+                                   value="{{ f.retry_delay_seconds }}" min="0" max="3600" aria-describedby="retry_delay_help">
+                            <div class="form-text" id="retry_delay_help">0 starts the next attempt straight away.</div>
+                        </div>
+                    </div>
+                    <div class="alert alert-warning mb-0 py-2 small" data-move-resume-warning role="status"
+                         {% if not (f.sync_type == 'move' and f.auto_resume) %}hidden{% endif %}>
+                        <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>
+                        Move operations may not resume correctly if files were partially moved.
+                    </div>
+                </div>
+            </div>
+
+            <details class="card mb-3 jf-advanced" id="advanced" {% if advanced_open %}open{% endif %}>
+                <summary class="card-header d-flex align-items-center gap-2">
+                    <i class="bi bi-chevron-right jf-chevron" aria-hidden="true"></i>
+                    <h2 class="h6 mb-0">Advanced rclone options</h2>
+                    <span class="badge bg-secondary ms-auto" id="advanced-count" hidden></span>
+                </summary>
+                <div class="card-body">
+                    <h3 class="h6 text-muted mb-3">Performance</h3>
                     <div class="row">
                         <div class="col-md-4 mb-3">
                             <label for="transfers" class="form-label">Transfers</label>
                             <input type="number" class="form-control" id="transfers" name="transfers"
-                                   value="{{ job.transfers if job else 4 }}" min="1" max="64">
-                            <div class="form-text">Parallel file transfers</div>
+                                   value="{{ f.transfers }}" min="1" max="64" data-default="4">
+                            <div class="form-text">Files copied in parallel</div>
                         </div>
                         <div class="col-md-4 mb-3">
                             <label for="checkers" class="form-label">Checkers</label>
                             <input type="number" class="form-control" id="checkers" name="checkers"
-                                   value="{{ job.checkers if job else 8 }}" min="1" max="64">
-                            <div class="form-text">Parallel file checkers</div>
+                                   value="{{ f.checkers }}" min="1" max="64" data-default="8">
+                            <div class="form-text">Files compared in parallel</div>
                         </div>
                         <div class="col-md-4 mb-3">
-                            <label for="retries" class="form-label">Retries</label>
+                            <label for="retries" class="form-label">Retry the whole transfer</label>
                             <input type="number" class="form-control" id="retries" name="retries"
-                                   value="{{ job.retries if job else 3 }}" min="0" max="99">
-                            <div class="form-text">Retries on error</div>
+                                   value="{{ f.retries }}" min="0" max="99" data-default="3" aria-describedby="retries_help">
+                            <div class="form-text" id="retries_help"><code>--retries</code>: repeat a pass that had errors before the run counts as failed.</div>
                         </div>
                     </div>
 
                     <div class="mb-3">
                         <div class="form-check">
                             <input type="checkbox" class="form-check-input" id="fast_list" name="fast_list"
-                                   {{ 'checked' if (job and job.fast_list) or not job }}>
+                                   data-default-checked="1" {{ 'checked' if f.fast_list }}>
                             <label class="form-check-label" for="fast_list">
                                 Fast List
                                 <small class="text-muted d-block">Fewer API calls to list remote. Recommended for large remotes.</small>
@@ -111,30 +238,30 @@
                         </div>
                     </div>
 
+                    <h3 class="h6 text-muted mb-3 mt-4">Order and comparison</h3>
                     <div class="row">
                         <div class="col-md-4 mb-3">
                             <label for="order_by_field" class="form-label">Order By Field</label>
-                            <select class="form-select" id="order_by_field" name="order_by_field">
-                                <option value="size" {{ 'selected' if (job and job.order_by_field == 'size') or not job or not job.order_by_field }}>Size</option>
-                                <option value="name" {{ 'selected' if job and job.order_by_field == 'name' }}>Name</option>
-                                <option value="modtime" {{ 'selected' if job and job.order_by_field == 'modtime' }}>Modified Time</option>
+                            <select class="form-select" id="order_by_field" name="order_by_field" data-default="size">
+                                <option value="size" {{ 'selected' if f.order_by_field == 'size' }}>Size</option>
+                                <option value="name" {{ 'selected' if f.order_by_field == 'name' }}>Name</option>
+                                <option value="modtime" {{ 'selected' if f.order_by_field == 'modtime' }}>Modified Time</option>
                             </select>
                             <div class="form-text">First value in <code>--order-by</code>.</div>
                         </div>
                         <div class="col-md-4 mb-3">
                             <label for="order_by_direction" class="form-label">Order Direction</label>
-                            <select class="form-select" id="order_by_direction" name="order_by_direction">
-                                <option value="mixed" {{ 'selected' if (job and job.order_by_direction == 'mixed') or not job or not job.order_by_direction }}>Mixed</option>
-                                <option value="desc" {{ 'selected' if job and job.order_by_direction == 'desc' }}>Descending</option>
-                                <option value="asc" {{ 'selected' if job and job.order_by_direction == 'asc' }}>Ascending</option>
+                            <select class="form-select" id="order_by_direction" name="order_by_direction" data-default="mixed">
+                                <option value="mixed" {{ 'selected' if f.order_by_direction == 'mixed' }}>Mixed</option>
+                                <option value="desc" {{ 'selected' if f.order_by_direction == 'desc' }}>Descending</option>
+                                <option value="asc" {{ 'selected' if f.order_by_direction == 'asc' }}>Ascending</option>
                             </select>
                             <div class="form-text">Second value in <code>--order-by</code>.</div>
                         </div>
-                        <div class="col-md-4 mb-3" id="order-by-window-row"{% if job and job.order_by_direction and job.order_by_direction != 'mixed' %} style="display:none"{% endif %}>
+                        <div class="col-md-4 mb-3" id="order-by-window-row"{% if f.order_by_direction != 'mixed' %} hidden{% endif %}>
                             <label for="order_by_mixed_window" class="form-label">Mixed Window (%)</label>
                             <input type="number" class="form-control" id="order_by_mixed_window" name="order_by_mixed_window"
-                                   value="{{ job.order_by_mixed_window if job and job.order_by_mixed_window is not none else 50 }}"
-                                   min="0" max="100">
+                                   value="{{ f.order_by_mixed_window }}" min="0" max="100" data-default="50">
                             <div class="form-text">Third value for mixed mode, e.g. <code>size,mixed,50</code>.</div>
                         </div>
                     </div>
@@ -142,33 +269,17 @@
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label for="compare_method" class="form-label">File Comparison Method</label>
-                            <select class="form-select" id="compare_method" name="compare_method">
-                                <option value="default" {{ 'selected' if not job or not job.compare_method or job.compare_method == 'default' }}>Default (modtime + size)</option>
-                                <option value="size_only" {{ 'selected' if job and job.compare_method == 'size_only' }}>Size Only</option>
-                                <option value="checksum" {{ 'selected' if job and job.compare_method == 'checksum' }}>Checksum</option>
-                                <option value="ignore_existing" {{ 'selected' if job and job.compare_method == 'ignore_existing' }}>Ignore Existing</option>
+                            <select class="form-select" id="compare_method" name="compare_method" data-default="default">
+                                <option value="default" {{ 'selected' if f.compare_method == 'default' }}>Default (modtime + size)</option>
+                                <option value="size_only" {{ 'selected' if f.compare_method == 'size_only' }}>Size Only</option>
+                                <option value="checksum" {{ 'selected' if f.compare_method == 'checksum' }}>Checksum</option>
+                                <option value="ignore_existing" {{ 'selected' if f.compare_method == 'ignore_existing' }}>Ignore Existing</option>
                             </select>
                             <div class="form-text">How rclone decides whether a file needs to be transferred.</div>
                         </div>
-                        <div class="col-md-6 mb-3" id="max-delete-row">
-                            <label for="max_delete" class="form-label">Delete limit</label>
-                            <input type="number" class="form-control" id="max_delete" name="max_delete"
-                                   value="{{ job.max_delete if job and job.max_delete is not none else 1000 }}" min="-1">
-                            <div class="form-text">Stop a sync after deleting this many files at the destination. Protects against a missing or empty source. -1 = no limit.</div>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label for="max_age_hours" class="form-label">Must succeed at least every (hours)</label>
-                            <input type="number" class="form-control" id="max_age_hours" name="max_age_hours"
-                                   value="{{ job.max_age_hours if job and job.max_age_hours else '' }}" min="1">
-                            <div class="form-text">Leave blank to expect a successful run after every scheduled time. Set it for jobs without a schedule, or to allow more slack.</div>
-                        </div>
                     </div>
-                </div>
-            </div>
 
-            <div class="card mb-3">
-                <div class="card-header"><i class="bi bi-speedometer2"></i> Bandwidth Limits</div>
-                <div class="card-body">
+                    <h3 class="h6 text-muted mb-3 mt-4">Bandwidth limits</h3>
                     <p class="text-muted small">
                         Cap this job's speed on chosen days and times. Leave empty for no job-specific limit.
                         Limits from Settings also apply, and the lowest one wins.
@@ -176,60 +287,37 @@
                     {% with bw_rules=bandwidth_rules, bw_scoped=false, bw_remotes=[] %}
                         {% include "partials/bandwidth_editor.html" %}
                     {% endwith %}
-                </div>
-            </div>
 
-            <div class="card mb-3">
-                <div class="card-header">Filters</div>
-                <div class="card-body">
+                    <h3 class="h6 text-muted mb-3 mt-4">Filters</h3>
                     <div class="mb-3">
                         <label for="excludes" class="form-label">Exclude Patterns</label>
-                        <textarea class="form-control" id="excludes" name="excludes" rows="4"
-                                  placeholder="One pattern per line, e.g.:&#10;*.tmp&#10;.Trash-*&#10;media/**">{{ '\n'.join(job.get_excludes()) if job else '' }}</textarea>
+                        <textarea class="form-control font-monospace" id="excludes" name="excludes" rows="4"
+                                  data-default="" spellcheck="false"
+                                  placeholder="One pattern per line, e.g.:&#10;*.tmp&#10;.Trash-*&#10;media/**">{{ f.excludes }}</textarea>
                         <div class="form-text">One pattern per line. Uses rclone's filter syntax.</div>
                     </div>
-                </div>
-            </div>
 
-            <div class="card mb-3">
-                <div class="card-header">Auto-Resume</div>
-                <div class="card-body">
-                    <div class="mb-3">
-                        <div class="form-check form-switch">
-                            <input type="checkbox" class="form-check-input" id="auto_resume" name="auto_resume"
-                                   {{ 'checked' if job and job.auto_resume }}>
-                            <label class="form-check-label" for="auto_resume">
-                                Automatically retry failed or interrupted runs
-                            </label>
-                        </div>
-                        <div class="form-text">When enabled, failed runs will be retried automatically. Also resumes jobs interrupted by an app restart.</div>
-                    </div>
-                    <div class="row" id="resume-options"{% if not (job and job.auto_resume) %} style="display:none"{% endif %}>
-                        <div class="col-md-6 mb-3">
-                            <label for="max_retries" class="form-label">Max Retries</label>
-                            <input type="number" class="form-control" id="max_retries" name="max_retries"
-                                   value="{{ job.max_retries if job else 3 }}" min="1" max="20">
-                            <div class="form-text">Maximum retry attempts per run chain</div>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label for="retry_delay_seconds" class="form-label">Retry Delay (seconds)</label>
-                            <input type="number" class="form-control" id="retry_delay_seconds" name="retry_delay_seconds"
-                                   value="{{ job.retry_delay_seconds if job else 60 }}" min="0" max="3600">
-                            <div class="form-text">Wait time before retrying. 0 = immediate.</div>
+                    <h3 class="h6 text-muted mb-3 mt-4">Extra rclone options</h3>
+                    <div class="mb-0">
+                        <label for="extra_flags" class="form-label">Extra flags</label>
+                        <textarea class="form-control font-monospace{{ ' is-invalid' if errors.get('extra_flags') }}"
+                                  id="extra_flags" name="extra_flags" rows="4" data-default=""
+                                  spellcheck="false" autocapitalize="off" autocomplete="off"
+                                  aria-describedby="extra_flags_help{{ ' extra_flags-error' if errors.get('extra_flags') }}"
+                                  {% if errors.get('extra_flags') %}aria-invalid="true"{% endif %}
+                                  placeholder="One flag per line, e.g.:&#10;--max-backlog 200000&#10;--buffer-size=32M&#10;--ignore-size">{{ f.extra_flags }}</textarea>
+                        {{ field_errors('extra_flags') }}
+                        <div class="form-text" id="extra_flags_help">
+                            One rclone flag per line, written as on the command line. Flags rclone doesn't know are rejected.
+                            Transfers, retries, ordering, comparison, delete limit, bandwidth and filters are set by their own fields.
                         </div>
                     </div>
-                    {% if job and job.sync_type == 'move' %}
-                    <div class="alert alert-warning mb-0 py-2 small">
-                        <i class="bi bi-exclamation-triangle me-1"></i>
-                        Move operations may not resume correctly if files were partially moved.
-                    </div>
-                    {% endif %}
                 </div>
-            </div>
+            </details>
 
             <div class="d-flex justify-content-between">
                 <a href="{{ url_for('jobs.list_jobs') }}" class="btn btn-outline-secondary">Cancel</a>
-                <button type="submit" class="btn btn-success">
+                <button type="submit" class="btn btn-primary">
                     <i class="bi bi-check-lg"></i> {{ 'Save Changes' if job else 'Create Job' }}
                 </button>
             </div>
@@ -238,14 +326,14 @@
 </div>
 
 <!-- Directory Browse Modal -->
-<div class="modal fade" id="browseModal" tabindex="-1">
+<div class="modal fade" id="browseModal" tabindex="-1" aria-labelledby="browseModalTitle" aria-hidden="true">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">
-                    <i class="bi bi-folder2-open me-2"></i>Browse Directory
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <h2 class="modal-title h5" id="browseModalTitle">
+                    <i class="bi bi-folder2-open me-2" aria-hidden="true"></i>Browse Directory
+                </h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <!-- Start picker: shown when no path is active -->
@@ -259,7 +347,7 @@
                         <button type="button" class="btn btn-sm btn-outline-secondary" id="browse-back-btn" onclick="goBack()">
                             <i class="bi bi-arrow-left"></i> Up
                         </button>
-                        <code id="browse-path" class="flex-grow-1 text-warning text-break small"></code>
+                        <code id="browse-path" class="flex-grow-1 text-break small"></code>
                     </div>
                     <div id="browse-list" class="list-group" style="max-height:360px;overflow-y:auto;"></div>
                 </div>
@@ -322,14 +410,14 @@ function showStartPicker() {
         html += `
         <button type="button" class="list-group-item list-group-item-action py-2"
                 data-browse-path="${escapeHtml(root)}">
-            <i class="bi bi-hdd me-2 text-info"></i>${escapeHtml(root)} &nbsp;<span class="text-muted small">(${isWindows ? 'local drive' : 'local filesystem root'})</span>
+            <i class="bi bi-hdd me-2 text-primary"></i>${escapeHtml(root)} &nbsp;<span class="text-muted small">(${isWindows ? 'local drive' : 'local filesystem root'})</span>
         </button>`;
     }
     for (const r of availableRemotes) {
         html += `
         <button type="button" class="list-group-item list-group-item-action py-2"
                 data-browse-path="${escapeHtml(r + ':')}">
-            <i class="bi bi-cloud me-2 text-warning"></i>${escapeHtml(r)}: &nbsp;<span class="text-muted small">(remote)</span>
+            <i class="bi bi-cloud me-2 text-primary"></i>${escapeHtml(r)}: &nbsp;<span class="text-muted small">(remote)</span>
         </button>`;
     }
     if (!availableRemotes.length) {
@@ -375,7 +463,7 @@ function renderDirs(dirs) {
     list.innerHTML = dirs.map(dir =>
         `<button type="button" class="list-group-item list-group-item-action py-2"
                  data-dir-name="${escapeHtml(dir)}">
-            <i class="bi bi-folder me-2 text-warning"></i>${escapeHtml(dir)}
+            <i class="bi bi-folder me-2 text-primary"></i>${escapeHtml(dir)}
         </button>`
     ).join('');
     list.querySelectorAll('[data-dir-name]').forEach(btn => {
@@ -429,29 +517,6 @@ function selectCurrent() {
     document.getElementById(browseTarget).value = currentBrowsePath;
     bootstrap.Modal.getInstance(document.getElementById('browseModal')).hide();
 }
-
-// Auto-Resume toggle: show/hide retry options
-document.getElementById('auto_resume').addEventListener('change', function() {
-    document.getElementById('resume-options').style.display = this.checked ? '' : 'none';
-});
-
-function toggleOrderByMixedWindow() {
-    const direction = document.getElementById('order_by_direction').value;
-    const row = document.getElementById('order-by-window-row');
-    row.style.display = direction === 'mixed' ? '' : 'none';
-}
-
-document.getElementById('order_by_direction').addEventListener('change', toggleOrderByMixedWindow);
-toggleOrderByMixedWindow();
 </script>
-<script>
-    // The delete limit only applies to sync jobs.
-    (function () {
-        const type = document.getElementById('sync_type');
-        const row = document.getElementById('max-delete-row');
-        const update = () => { row.style.display = type.value === 'sync' ? '' : 'none'; };
-        type.addEventListener('change', update);
-        update();
-    })();
-</script>
+<script src="{{ url_for('static', filename='js/jobform.js') }}"></script>
 {% endblock %}

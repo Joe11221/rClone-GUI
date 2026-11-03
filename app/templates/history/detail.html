@@ -2,15 +2,34 @@
 {% from "partials/run_errors.html" import run_errors %}
 {% block title %}Run #{{ run.id }} - rClone GUI{% endblock %}
 
+{% macro status_badge(run) %}
+    {% if run.status == 'running' %}
+        <span class="badge bg-primary"><i class="bi bi-arrow-repeat"></i> Running</span>
+    {% elif run.status == 'completed' %}
+        <span class="badge bg-success"><i class="bi bi-check-lg"></i> Completed</span>
+    {% elif run.status == 'failed' %}
+        <span class="badge bg-danger"><i class="bi bi-x-lg"></i> Failed</span>
+    {% elif run.status == 'stopped' %}
+        <span class="badge bg-warning text-dark"><i class="bi bi-stop-fill"></i> Stopped</span>
+    {% elif run.status == 'interrupted' %}
+        <span class="badge bg-info"><i class="bi bi-pause-circle"></i> Interrupted</span>
+    {% elif run.status == 'held' %}
+        <span class="badge bg-warning text-dark"><i class="bi bi-shield-exclamation"></i> Held</span>
+    {% elif run.status == 'skipped' %}
+        <span class="badge bg-secondary"><i class="bi bi-skip-forward"></i> Skipped</span>
+    {% endif %}
+{% endmacro %}
+
 {% block content %}
+{% set job_name = run.job.name if run.job else 'Deleted job' %}
 <div class="row justify-content-center">
     <div class="col-lg-8">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h4><i class="bi bi-journal-text"></i> Run #{{ run.id }}</h4>
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+            <h1 class="h4 mb-0"><i class="bi bi-journal-text"></i> Run #{{ run.id }}</h1>
             <div class="d-flex gap-2">
                 {% if run.status in ['failed', 'interrupted'] and run.job and not run.guard %}
                 <form method="post" action="{{ url_for('ops.resume_run', run_id=run.id) }}">
-                    <button type="submit" class="btn btn-outline-primary">
+                    <button type="submit" class="btn btn-outline-secondary">
                         <i class="bi bi-arrow-clockwise"></i> Resume
                     </button>
                 </form>
@@ -19,7 +38,7 @@
                 <form method="post" action="{{ url_for('ops.start_job', job_id=run.job_id) }}"
                       data-confirm="This run will skip the safety checks and may delete files at the destination. Continue?" data-confirm-label="Run anyway">
                     <input type="hidden" name="override" value="1">
-                    <button type="submit" class="btn btn-outline-warning">
+                    <button type="submit" class="btn btn-outline-secondary">
                         <i class="bi bi-shield-slash"></i> Run anyway
                     </button>
                 </form>
@@ -30,153 +49,121 @@
             </div>
         </div>
 
-        <div class="card mb-3">
+        <section class="card mb-3" aria-labelledby="summary-h">
             <div class="card-body">
-                <div class="row">
-                    <div class="col-md-6">
-                        <table class="table table-borderless mb-0">
-                            <tr>
-                                <td class="text-muted">Job</td>
-                                <td><strong>{{ run.job.name if run.job else 'Deleted Job' }}</strong></td>
-                            </tr>
-                            <tr>
-                                <td class="text-muted">Status</td>
-                                <td>
-                                    {% if run.status == 'running' %}
-                                        <span class="badge bg-primary">Running</span>
-                                    {% elif run.status == 'completed' %}
-                                        <span class="badge bg-success">Completed</span>
-                                    {% elif run.status == 'failed' %}
-                                        <span class="badge bg-danger">Failed</span>
-                                    {% elif run.status == 'stopped' %}
-                                        <span class="badge bg-warning text-dark">Stopped</span>
-                                    {% elif run.status == 'interrupted' %}
-                                        <span class="badge bg-info">Interrupted</span>
-                                    {% elif run.status == 'held' %}
-                                        <span class="badge bg-warning text-dark"><i class="bi bi-shield-exclamation"></i> Held</span>
-                                    {% elif run.status == 'skipped' %}
-                                        <span class="badge bg-secondary"><i class="bi bi-skip-forward"></i> Skipped</span>
-                                    {% endif %}
-                                    {% if run.retry_count > 0 %}
-                                        <span class="badge bg-secondary ms-1">Retry #{{ run.retry_count }}</span>
-                                    {% endif %}
-                                </td>
-                            </tr>
-                            <tr>
-                                <td class="text-muted">Triggered By</td>
-                                <td><span class="badge bg-secondary">{{ run.triggered_by }}</span></td>
-                            </tr>
-                            <tr>
-                                <td class="text-muted">rclone Job ID</td>
-                                <td>{{ run.rclone_jobid or '--' }}</td>
-                            </tr>
-                            {% if run.retry_of_run_id %}
-                            <tr>
-                                <td class="text-muted">Retry Of</td>
-                                <td>
-                                    <a href="{{ url_for('history.detail', run_id=run.retry_of_run_id) }}">
-                                        Run #{{ run.retry_of_run_id }}
-                                    </a>
-                                </td>
-                            </tr>
-                            {% endif %}
-                        </table>
+                <h2 class="h5 mb-2" id="summary-h">
+                    {{ job_name }}
+                    {{ status_badge(run) }}
+                    {% if run.retry_count > 0 %}
+                        <span class="badge bg-secondary ms-1">Retry #{{ run.retry_count }}</span>
+                    {% endif %}
+                </h2>
+                <p class="mb-2">
+                    Started {{ run.started_at|local_time_sec }}
+                    {%- if run.finished_at %}, finished {{ run.finished_at|local_time_sec }}
+                    {%- if run.started_at %} ({{ (run.finished_at - run.started_at)|fmt_duration }}){% endif %}
+                    {%- elif run.status == 'running' %}, still running{% endif %}.
+                    {% if run.errors %}
+                        {{ run.errors }} error{{ '' if run.errors == 1 else 's' }}.
+                    {% elif run.status == 'completed' %}
+                        No errors.
+                    {% endif %}
+                </p>
+                {% if run.error_message %}
+                <p class="mb-2 text-break">{{ run.error_message }}</p>
+                {% endif %}
+                <div class="row text-center mt-3 g-2">
+                    <div class="col-4">
+                        <div class="h5 mb-0">{{ run.bytes_transferred|fmt_bytes }}</div>
+                        <div class="small text-muted">Transferred</div>
                     </div>
-                    <div class="col-md-6">
-                        <table class="table table-borderless mb-0">
-                            <tr>
-                                <td class="text-muted">Started</td>
-                                <td>{{ run.started_at|local_time_sec }}</td>
-                            </tr>
-                            <tr>
-                                <td class="text-muted">Finished</td>
-                                <td>{{ run.finished_at|local_time_sec }}</td>
-                            </tr>
-                            <tr>
-                                <td class="text-muted">Duration</td>
-                                <td>
-                                    {% if run.started_at and run.finished_at %}
-                                        {{ (run.finished_at - run.started_at)|fmt_duration }}
-                                    {% elif run.status == 'running' %}
-                                        <span class="text-muted">In progress...</span>
-                                    {% else %}
-                                        --
-                                    {% endif %}
-                                </td>
-                            </tr>
-                        </table>
+                    <div class="col-4">
+                        <div class="h5 mb-0">{{ run.files_transferred or 0 }}</div>
+                        <div class="small text-muted">Files</div>
+                    </div>
+                    <div class="col-4">
+                        <div class="h5 mb-0">{{ run.errors or 0 }}</div>
+                        <div class="small text-muted">Errors</div>
                     </div>
                 </div>
             </div>
-        </div>
+        </section>
+
+        {% if run.errors or error_count %}
+        <section class="card mb-3">
+            <div class="card-body">
+                {{ run_errors(run, heading='h2') }}
+            </div>
+        </section>
+        {% endif %}
+
+        <section class="card mb-3" aria-labelledby="meta-h">
+            <div class="card-body">
+                <h2 class="h5 mb-3" id="meta-h">Run details</h2>
+                <dl class="row mb-0">
+                    <dt class="col-sm-4 text-muted fw-normal">Job</dt>
+                    <dd class="col-sm-8 text-break">{{ job_name }}</dd>
+                    <dt class="col-sm-4 text-muted fw-normal">Triggered by</dt>
+                    <dd class="col-sm-8"><span class="badge bg-secondary">{{ run.triggered_by }}</span></dd>
+                    {% if run.retry_of_run_id %}
+                    <dt class="col-sm-4 text-muted fw-normal">Retry of</dt>
+                    <dd class="col-sm-8"><a href="{{ url_for('history.detail', run_id=run.retry_of_run_id) }}">Run #{{ run.retry_of_run_id }}</a></dd>
+                    {% endif %}
+                    {% if run.rclone_jobid %}
+                    <dt class="col-sm-4 text-muted fw-normal">rclone job ID</dt>
+                    <dd class="col-sm-8">{{ run.rclone_jobid }}</dd>
+                    {% endif %}
+                    <dt class="col-sm-4 text-muted fw-normal">Started</dt>
+                    <dd class="col-sm-8">{{ run.started_at|local_time_sec }}</dd>
+                    {% if run.finished_at %}
+                    <dt class="col-sm-4 text-muted fw-normal">Finished</dt>
+                    <dd class="col-sm-8">{{ run.finished_at|local_time_sec }}</dd>
+                    {% endif %}
+                </dl>
+                <p class="small text-muted mb-0 mt-2">Times in {{ config.TIMEZONE }}.</p>
+            </div>
+        </section>
 
         {% set snapshot = run.get_config_snapshot() %}
         {% if snapshot %}
         <details class="card mb-3">
             <summary class="card-header">Settings used for this run</summary>
             <div class="card-body">
-                <table class="table table-borderless table-sm mb-2">
-                    <tr><td class="text-muted">Source</td><td><code>{{ snapshot.source }}</code></td></tr>
-                    <tr><td class="text-muted">Destination</td><td><code>{{ snapshot.destination }}</code></td></tr>
-                    <tr><td class="text-muted">Type</td><td>{{ snapshot.sync_type }}</td></tr>
-                </table>
+                <dl class="row mb-2">
+                    <dt class="col-sm-4 text-muted fw-normal">Source</dt>
+                    <dd class="col-sm-8 text-break"><code>{{ snapshot.source }}</code></dd>
+                    <dt class="col-sm-4 text-muted fw-normal">Destination</dt>
+                    <dd class="col-sm-8 text-break"><code>{{ snapshot.destination }}</code></dd>
+                    <dt class="col-sm-4 text-muted fw-normal">Type</dt>
+                    <dd class="col-sm-8">{{ snapshot.sync_type }}</dd>
+                </dl>
                 <pre class="mb-0 small">{{ {'config': snapshot.config, 'filter': snapshot.filter}|tojson(indent=2) }}</pre>
             </div>
         </details>
         {% endif %}
 
-        <div class="card mb-3">
-            <div class="card-header">Transfer Stats</div>
-            <div class="card-body">
-                <div class="row text-center">
-                    <div class="col-md-4">
-                        <h5>{{ run.bytes_transferred|fmt_bytes }}</h5>
-                        <small class="text-muted">Transferred</small>
-                    </div>
-                    <div class="col-md-4">
-                        <h5>{{ run.files_transferred or 0 }}</h5>
-                        <small class="text-muted">Files Transferred</small>
-                    </div>
-                    <div class="col-md-4">
-                        <h5 class="{{ 'text-danger' if run.errors else '' }}">{{ run.errors or 0 }}</h5>
-                        <small class="text-muted">Errors</small>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        {% if run.error_message %}
-        <div class="card border-danger mb-3">
-            <div class="card-header text-danger">Error Details</div>
-            <div class="card-body">
-                <pre class="mb-0 text-danger">{{ run.error_message }}</pre>
-            </div>
-        </div>
-        {% endif %}
-
-        {% if run.errors or error_count %}
-        <div class="card bg-dark border-danger mb-3">
-            <div class="card-body">
-                {{ run_errors(run) }}
-            </div>
-        </div>
-        {% endif %}
-
         {% if run.job %}
-        <div class="card">
-            <div class="card-header">Job Configuration</div>
+        <details class="card">
+            <summary class="card-header">Current job settings (may differ from this run)</summary>
             <div class="card-body">
-                <table class="table table-borderless mb-0">
-                    <tr><td class="text-muted">Source</td><td><code>{{ run.job.source }}</code></td></tr>
-                    <tr><td class="text-muted">Destination</td><td><code>{{ run.job.destination }}</code></td></tr>
-                    <tr><td class="text-muted">Sync Type</td><td>{{ run.job.sync_type }}</td></tr>
-                    <tr><td class="text-muted">Transfers</td><td>{{ run.job.transfers }}</td></tr>
-                    <tr><td class="text-muted">Checkers</td><td>{{ run.job.checkers }}</td></tr>
-                    <tr><td class="text-muted">Fast List</td><td>{{ 'Yes' if run.job.fast_list else 'No' }}</td></tr>
-                    <tr><td class="text-muted">BW Limits</td><td>{{ run.job.bandwidth_rules | length or 'None' }}{{ ' rule(s)' if run.job.bandwidth_rules }}</td></tr>
-                </table>
+                <dl class="row mb-0">
+                    <dt class="col-sm-4 text-muted fw-normal">Source</dt>
+                    <dd class="col-sm-8 text-break"><code>{{ run.job.source }}</code></dd>
+                    <dt class="col-sm-4 text-muted fw-normal">Destination</dt>
+                    <dd class="col-sm-8 text-break"><code>{{ run.job.destination }}</code></dd>
+                    <dt class="col-sm-4 text-muted fw-normal">Sync type</dt>
+                    <dd class="col-sm-8">{{ run.job.sync_type }}</dd>
+                    <dt class="col-sm-4 text-muted fw-normal">Transfers</dt>
+                    <dd class="col-sm-8">{{ run.job.transfers }}</dd>
+                    <dt class="col-sm-4 text-muted fw-normal">Checkers</dt>
+                    <dd class="col-sm-8">{{ run.job.checkers }}</dd>
+                    <dt class="col-sm-4 text-muted fw-normal">Fast list</dt>
+                    <dd class="col-sm-8">{{ 'Yes' if run.job.fast_list else 'No' }}</dd>
+                    <dt class="col-sm-4 text-muted fw-normal">Bandwidth limits</dt>
+                    <dd class="col-sm-8">{% if run.job.bandwidth_rules %}{{ run.job.bandwidth_rules | length }} rule(s){% else %}None{% endif %}</dd>
+                </dl>
             </div>
-        </div>
+        </details>
         {% endif %}
     </div>
 </div>

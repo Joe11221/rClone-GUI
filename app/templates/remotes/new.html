@@ -9,7 +9,7 @@
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-lg-8">
-        <h4 class="mb-3"><i class="bi bi-cloud-plus"></i> Add Remote</h4>
+        <h1 class="h4 mb-3"><i class="bi bi-cloud-plus"></i> Add Remote</h1>
 
         {% if error %}
         <div class="alert alert-danger">{{ error }}</div>
@@ -69,7 +69,8 @@
                         <button type="button" class="btn btn-link btn-sm p-0" data-bs-toggle="collapse"
                                 data-bs-target="#token-box">I already have a token</button>
                         <div class="collapse" id="token-box">
-                            <textarea class="form-control font-monospace mt-2" id="remote-token" rows="3"
+                            <label for="remote-token" class="form-label mt-2">Token</label>
+                            <textarea class="form-control font-monospace" id="remote-token" rows="3"
                                       placeholder="Paste the output of rclone authorize"></textarea>
                             <div class="form-text">
                                 From <code id="authorize-command">rclone authorize</code> on another computer.
@@ -87,7 +88,7 @@
                 </div>
             </div>
 
-            <div class="alert alert-danger" id="remote-error" style="display: none;"></div>
+            <div class="alert alert-danger" id="remote-error" role="alert" style="display: none;"></div>
             <div class="card mb-3" id="signin-panel" style="display: none;">
                 <div class="card-header">Sign in</div>
                 <div class="card-body">
@@ -117,7 +118,7 @@
                             <input type="text" class="form-control font-monospace" id="signin-url"
                                    placeholder="http://localhost:53682/?state=..." autocomplete="off"
                                    aria-label="Address from the browser">
-                            <button type="button" class="btn btn-success" id="signin-finish">Finish</button>
+                            <button type="button" class="btn btn-primary" id="signin-finish">Finish</button>
                         </div>
                         {% endif %}
                     </div>
@@ -129,7 +130,7 @@
 
             <div class="d-flex justify-content-between">
                 <a href="{{ url_for('settings.index') }}" class="btn btn-outline-secondary">Cancel</a>
-                <button type="submit" class="btn btn-success" id="remote-submit">
+                <button type="submit" class="btn btn-primary" id="remote-submit">
                     <i class="bi bi-check-lg"></i> <span id="remote-submit-label">Create remote</span>
                 </button>
             </div>

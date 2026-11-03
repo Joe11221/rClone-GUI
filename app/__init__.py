@@ -260,7 +260,7 @@ def create_app(config_class=Config):
         jobs = Job.query.order_by(Job.name).all()
         active_runs = RunHistory.query.filter_by(status="running").all()
         recent_runs = (
-            RunHistory.query.order_by(RunHistory.started_at.desc()).limit(10).all()
+            RunHistory.query.order_by(RunHistory.started_at.desc()).limit(8).all()
         )
         rclone_connected = False
         try:
@@ -268,14 +268,17 @@ def create_app(config_class=Config):
             rclone_connected = True
         except Exception:
             pass
-        from app.services.health import current_report
+        from app.services import health as health_service
 
-        health_report, _ = current_report(
-            app.config["TIMEZONE"], app.config["HEALTH_GRACE_MINUTES"]
+        now = datetime.utcnow()
+        health_report, _ = health_service.current_report(
+            app.config["TIMEZONE"], app.config["HEALTH_GRACE_MINUTES"], now
         )
         return render_template(
             "dashboard.html",
             health=health_report,
+            verdict=health_service.verdict(health_report, now, tz),
+            rows=health_service.dashboard_rows(health_report, now, tz),
             jobs=jobs,
             active_runs=active_runs,
             recent_runs=recent_runs,

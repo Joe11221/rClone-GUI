@@ -1,21 +1,23 @@
 {# Failure list for a run, driven by static/js/errors.js.
    live=True: hidden Running-page feed that shows the newest failures as they happen.
    live=False: full browser (paging, filter, export) for a run's detail page. #}
-{% macro run_errors(run, live=False) %}
+{% macro run_errors(run, live=False, heading='h3') %}
 <div class="run-errors{{ ' d-none' if live }}" id="{{ 'failures' if not live else 'failures-' ~ run.id }}"
-     data-run-id="{{ run.id }}" data-live="{{ 1 if live else 0 }}"
+     data-run-id="{{ run.id }}" data-tz="{{ config.TIMEZONE }}" data-live="{{ 1 if live else 0 }}"
      data-max-rows="{{ 200 if live else 0 }}" data-page-size="{{ 50 if live else 100 }}">
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-        <h6 class="mb-0 text-danger">
-            <i class="bi bi-exclamation-triangle"></i> Failures
+        <{{ heading }} class="h6 mb-0">
+            <i class="bi bi-exclamation-triangle" aria-hidden="true"></i> Failures
             <span class="badge bg-danger re-total">0</span>
-        </h6>
+            <span class="text-muted fw-normal small ms-1">Times in {{ config.TIMEZONE }}</span>
+        </{{ heading }}>
         <div class="d-flex gap-2">
             <input type="search" class="form-control form-control-sm re-search"
-                   placeholder="Filter by file or message" aria-label="Filter failures">
+                   placeholder="Filter by file or message" aria-label="Filter failures by file or message">
             <a class="btn btn-sm btn-outline-secondary re-csv text-nowrap"
-               href="{{ url_for('run_errors.export_errors', run_id=run.id) }}">
-                <i class="bi bi-download"></i> CSV
+               href="{{ url_for('run_errors.export_errors', run_id=run.id) }}"
+               aria-label="Download failures as CSV">
+                <i class="bi bi-download" aria-hidden="true"></i> CSV
             </a>
             {% if live %}
             <a class="btn btn-sm btn-outline-secondary text-nowrap"
@@ -25,10 +27,11 @@
             {% endif %}
         </div>
     </div>
-    <div class="small text-danger mb-2 d-none re-latest"></div>
+    <div class="small mb-2 d-none re-latest"></div>
     <div class="re-categories mb-2"></div>
     <div class="re-scroll">
         <table class="table table-sm table-borderless mb-0 re-table">
+            <caption class="visually-hidden">Failed files in this run</caption>
             <tbody class="re-rows"></tbody>
         </table>
     </div>

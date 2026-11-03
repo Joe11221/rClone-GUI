@@ -143,6 +143,10 @@ class RcloneClient:
     def delete_remote(self, name):
         return self._call("config/delete", {"name": name})
 
+    def options_info(self):
+        """Every option rclone knows, grouped by block (e.g. "main")."""
+        return self._call("options/info")
+
     # --- File operations ---
 
     def list_files(self, fs, remote="", recurse=False):

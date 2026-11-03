@@ -162,3 +162,65 @@ def test_enabling_a_schedule_resets_the_baseline(app, client, fake_rclone):
     client.post(f"/schedules/{sched_id}/toggle")
     with app.app_context():
         assert Schedule.query.one().catch_up_after > two_days_ago
+
+
+def test_describe_endpoint_and_list_shows_words(app, client, fake_rclone):
+    _job_with_schedule(app, client)
+    data = client.get("/schedules/describe?expr=0 2 * * *").get_json()
+    assert data == {"text": "Every day at 02:00", "described": True}
+    assert client.get("/schedules/describe?expr=nonsense").get_json()["described"] is False
+    page = client.get("/schedules/").data.decode()
+    assert "Every day at 02:00" in page and "<code>0 2 * * *</code>" in page
+
+
+def test_history_filters_and_paging(app, client, fake_rclone):
+    from app.routes.history import PER_PAGE
+
+    job_id = _job_with_schedule(app, client)
+    with app.app_context():
+        for i in range(PER_PAGE + 5):
+            db.session.add(RunHistory(job_id=job_id, status="completed"))
+        db.session.add(RunHistory(job_id=job_id, status="failed"))
+        db.session.commit()
+    page1 = client.get("/history/").data.decode()
+    assert "Page 1 of 2" in page1 and "rel=\"next\"" in page1
+    assert "Page 2 of 2" in client.get("/history/?page=2").data.decode()
+    failed = client.get(f"/history/?job={job_id}&status=failed").data.decode()
+    assert "1 run for" in failed and "Reset filters" in failed
+    empty = client.get("/history/?status=skipped").data.decode()
+    assert "No runs match these filters." in empty
+    assert client.get("/history/?status=bogus&job=zzz&page=-4").status_code == 200
+
+
+def test_invalid_cron_is_refused_with_the_typed_text_kept(app, client):
+    client.post(
+        "/jobs/create",
+        data={"name": "j", "source": "/a", "destination": "b:", "sync_type": "copy"},
+    )
+    with app.app_context():
+        job_id = Job.query.one().id
+
+    resp = client.post(
+        "/schedules/create",
+        data={"job_id": job_id, "cron_expression": "99 * * *", "enabled": "on"},
+    )
+    assert resp.status_code == 400
+    assert b"Not a valid cron expression" in resp.data
+    assert b'value="99 * * *"' in resp.data
+    with app.app_context():
+        assert Schedule.query.count() == 0
+
+    client.post(
+        "/schedules/create",
+        data={"job_id": job_id, "cron_expression": "0 3 * * *", "enabled": "on"},
+    )
+    with app.app_context():
+        sched_id = Schedule.query.one().id
+
+    resp = client.post(
+        f"/schedules/{sched_id}/edit",
+        data={"cron_expression": "not cron", "enabled": "on"},
+    )
+    assert resp.status_code == 400
+    with app.app_context():
+        assert Schedule.query.one().cron_expression == "0 3 * * *"

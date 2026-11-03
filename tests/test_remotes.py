@@ -390,3 +390,49 @@ def test_favicon_is_served_and_linked(client):
     assert client.get("/favicon.ico").status_code == 200
     page = client.get("/").data
     assert b"favicon.svg" in page and b"favicon.ico" in page
+
+
+# --- deleting remotes ---
+
+
+def test_settings_lists_a_delete_button_per_remote(client, rclone):
+    page = client.get("/settings/").get_data(as_text=True)
+    assert 'aria-label="Delete remote existing"' in page
+    assert 'data-confirm-label="Delete remote"' in page
+    assert 'action="/settings/remotes/delete"' in page
+
+
+def test_delete_removes_the_remote_and_says_so(client, rclone):
+    response = client.post("/settings/remotes/delete", data={"name": "existing"})
+    assert response.status_code == 302
+    assert "existing" not in rclone.remotes
+    with client.session_transaction() as session:
+        category, message = session["_flashes"][-1]
+    assert category == "success" and "deleted" in message
+
+
+def test_delete_refuses_a_name_rclone_does_not_have(client, rclone):
+    calls = []
+    rclone.delete_remote = lambda name: calls.append(name)
+    client.post("/settings/remotes/delete", data={"name": "nope"})
+    assert calls == []
+    with client.session_transaction() as session:
+        category, message = session["_flashes"][-1]
+    assert category == "warning" and "nope" in message
+
+
+def test_delete_reports_an_rclone_failure_and_keeps_the_remote(client, rclone):
+    def fail(name):
+        raise RuntimeError("config is locked")
+
+    rclone.delete_remote = fail
+    client.post("/settings/remotes/delete", data={"name": "existing"})
+    assert "existing" in rclone.remotes
+    with client.session_transaction() as session:
+        category, message = session["_flashes"][-1]
+    assert category == "danger" and "config is locked" in message
+
+
+def test_remote_names_are_monospace(client, rclone):
+    page = client.get("/settings/").get_data(as_text=True)
+    assert '<span class="font-monospace">existing</span>' in page

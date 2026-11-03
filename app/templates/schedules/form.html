@@ -4,10 +4,10 @@
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-lg-6">
-        <h4 class="mb-3">
+        <h1 class="h4 mb-3">
             <i class="bi bi-{{ 'pencil' if schedule else 'plus-lg' }}"></i>
             {{ 'Edit' if schedule else 'Create' }} Schedule
-        </h4>
+        </h1>
 
         <form method="post">
             <div class="card mb-3">
@@ -19,25 +19,31 @@
                             <option value="">Select a job...</option>
                             {% for job in jobs %}
                                 {% if not job.schedule %}
-                                <option value="{{ job.id }}">{{ job.name }} ({{ job.sync_type }})</option>
+                                <option value="{{ job.id }}" {{ 'selected' if selected_job_id == job.id }}>{{ job.name }} ({{ job.sync_type }})</option>
                                 {% endif %}
                             {% endfor %}
                         </select>
                     </div>
                     {% else %}
                     <div class="mb-3">
-                        <label class="form-label">Job</label>
-                        <input type="text" class="form-control" value="{{ schedule.job.name }}" disabled>
+                        <label for="job_name" class="form-label">Job</label>
+                        <input type="text" class="form-control" id="job_name" value="{{ schedule.job.name }}" disabled>
                     </div>
                     {% endif %}
 
                     <div class="mb-3">
                         <label for="cron_expression" class="form-label">Cron Expression</label>
-                        <input type="text" class="form-control font-monospace" id="cron_expression" name="cron_expression"
-                               value="{{ schedule.cron_expression if schedule else '0 2 * * *' }}" required
-                               placeholder="min hour dom mon dow">
+                        {% set cron_shown = cron_value or (schedule.cron_expression if schedule else '0 2 * * *') %}
+                        <input type="text" class="form-control font-monospace{{ ' is-invalid' if cron_error }}" id="cron_expression" name="cron_expression"
+                               value="{{ cron_shown }}" required
+                               placeholder="min hour dom mon dow"{% if cron_error %} aria-describedby="cron-error"{% endif %}>
+                        {% if cron_error %}<div class="invalid-feedback" id="cron-error">{{ cron_error }}</div>{% endif %}
                         <div class="form-text">
-                            Format: minute hour day-of-month month day-of-week
+                            Format: minute hour day-of-month month day-of-week. Times use {{ timezone_name }}.
+                        </div>
+                        <div class="mt-2" aria-live="polite">
+                            <span class="text-muted small">Runs:</span>
+                            <span id="cron-preview" data-url="{{ url_for('schedules.describe') }}">{{ cron_shown | cron_text }}</span>
                         </div>
                     </div>
 
@@ -53,6 +59,10 @@
                         </div>
                     </div>
 
+                    <p class="form-text">
+                        Schedules can also be set on the job form.
+                    </p>
+
                     <div class="form-check mb-3">
                         <input type="checkbox" class="form-check-input" id="enabled" name="enabled"
                                {{ 'checked' if (schedule and schedule.enabled) or not schedule }}>
@@ -63,7 +73,7 @@
 
             <div class="d-flex justify-content-between">
                 <a href="{{ url_for('schedules.list_schedules') }}" class="btn btn-outline-secondary">Cancel</a>
-                <button type="submit" class="btn btn-success">
+                <button type="submit" class="btn btn-primary">
                     <i class="bi bi-check-lg"></i> {{ 'Save Changes' if schedule else 'Create Schedule' }}
                 </button>
             </div>
@@ -74,9 +84,28 @@
 
 {% block scripts %}
 <script>
+    const cronInput = document.getElementById('cron_expression');
+    const cronPreview = document.getElementById('cron-preview');
+    let previewTimer = null;
+    // The server owns the wording so the list and the form can never disagree.
+    function updatePreview() {
+        const expr = cronInput.value.trim();
+        if (!expr) { cronPreview.textContent = 'Enter a cron expression'; return; }
+        fetch(cronPreview.dataset.url + '?expr=' + encodeURIComponent(expr))
+            .then(r => r.json())
+            .then(d => {
+                cronPreview.textContent = d.described ? d.text : 'Cannot describe this expression; it will run as written.';
+            })
+            .catch(() => {});
+    }
+    cronInput.addEventListener('input', () => {
+        clearTimeout(previewTimer);
+        previewTimer = setTimeout(updatePreview, 250);
+    });
     document.querySelectorAll('.cron-preset').forEach(btn => {
         btn.addEventListener('click', () => {
-            document.getElementById('cron_expression').value = btn.dataset.cron;
+            cronInput.value = btn.dataset.cron;
+            updatePreview();
         });
     });
 </script>

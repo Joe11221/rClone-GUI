@@ -3,15 +3,15 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h4><i class="bi bi-list-task"></i> Jobs</h4>
-    <a href="{{ url_for('jobs.create_job') }}" class="btn btn-success">
+    <h1 class="h4 mb-0"><i class="bi bi-list-task"></i> Jobs</h1>
+    <a href="{{ url_for('jobs.create_job') }}" class="btn btn-primary">
         <i class="bi bi-plus-lg"></i> New Job
     </a>
 </div>
 
 {% if jobs %}
 <div class="table-responsive">
-    <table class="table table-hover">
+    <table class="table table-hover align-middle">
         <thead>
             <tr>
                 <th>Name</th>
@@ -27,35 +27,40 @@
             {% for job in jobs %}
             <tr>
                 <td><strong>{{ job.name }}</strong></td>
-                <td><span class="badge bg-info">{{ job.sync_type }}</span></td>
+                <td><span class="badge bg-secondary font-monospace">{{ job.sync_type }}</span></td>
                 <td><code>{{ job.source }}</code></td>
                 <td><code>{{ job.destination }}</code></td>
                 <td>{{ job.transfers }} / {{ job.checkers }}</td>
                 <td>
                     {% if job.schedule %}
                         {% if job.schedule.enabled %}
-                            <span class="badge bg-success">{{ job.schedule.cron_expression }}</span>
+                            <span title="{{ job.schedule.cron_expression }}">{{ job.schedule.cron_expression | cron_text }}</span>
+                            <code class="d-block small text-muted">{{ job.schedule.cron_expression }}</code>
                         {% else %}
-                            <span class="badge bg-secondary">Disabled</span>
+                            <span class="text-muted" title="{{ job.schedule.cron_expression }}">Disabled</span>
                         {% endif %}
                     {% else %}
                         <span class="text-muted">None</span>
                     {% endif %}
                 </td>
                 <td>
-                    <div class="d-flex gap-2 action-buttons">
+                    <div class="d-flex gap-2 action-buttons flex-nowrap">
                         <form action="{{ url_for('ops.start_job', job_id=job.id) }}" method="post" class="d-inline">
-                            <button type="submit" class="btn btn-sm btn-success" title="Start">
-                                <i class="bi bi-play-fill"></i>
+                            <button type="submit" class="btn btn-sm btn-outline-primary" title="Start"
+                                    aria-label="Start {{ job.name }}">
+                                <i class="bi bi-play-fill" aria-hidden="true"></i>
                             </button>
                         </form>
-                        <a href="{{ url_for('jobs.edit_job', job_id=job.id) }}" class="btn btn-sm btn-outline-primary" title="Edit">
-                            <i class="bi bi-pencil"></i>
+                        <a href="{{ url_for('jobs.edit_job', job_id=job.id) }}" class="btn btn-sm btn-outline-secondary" title="Edit"
+                           aria-label="Edit {{ job.name }}">
+                            <i class="bi bi-pencil" aria-hidden="true"></i>
                         </a>
                         <form action="{{ url_for('jobs.delete_job', job_id=job.id) }}" method="post" class="d-inline"
-                              data-confirm="Delete job '{{ job.name }}'?">
-                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
-                                <i class="bi bi-trash"></i>
+                              data-confirm="Delete job '{{ job.name }}'? Its schedule and run history are removed. Files at the source and destination are not touched."
+                              data-confirm-label="Delete job">
+                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete"
+                                    aria-label="Delete {{ job.name }}">
+                                <i class="bi bi-trash" aria-hidden="true"></i>
                             </button>
                         </form>
                     </div>
@@ -67,9 +72,9 @@
 </div>
 {% else %}
 <div class="text-center py-5">
-    <i class="bi bi-inbox display-1 text-muted"></i>
+    <i class="bi bi-inbox display-1 text-muted" aria-hidden="true"></i>
     <p class="text-muted mt-3">No jobs defined yet.</p>
-    <a href="{{ url_for('jobs.create_job') }}" class="btn btn-success">
+    <a href="{{ url_for('jobs.create_job') }}" class="btn btn-primary">
         <i class="bi bi-plus-lg"></i> Create Your First Job
     </a>
 </div>

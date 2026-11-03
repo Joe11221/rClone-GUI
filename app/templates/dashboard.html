@@ -8,276 +8,195 @@
     'overdue': ('danger', 'bi-clock-history', 'Overdue'),
     'warning': ('warning', 'bi-exclamation-triangle', 'Warning'),
     'pending': ('secondary', 'bi-hourglass', 'Pending'),
+    'manual': ('secondary', 'bi-calendar-x', 'Not scheduled'),
 } %}
-<!-- Backup health -->
-<div class="card mb-3" id="backup-health">
-    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <span><i class="bi bi-heart-pulse"></i> Backup health</span>
-        {% if health.success_rate_7d is not none %}
-        <small class="text-body-secondary">Successful runs, last 7 days: {{ '%.1f' % (health.success_rate_7d * 100) }}%</small>
-        {% endif %}
+{% set verdict_icon = {
+    'ok': ('text-success', 'bi-check-circle-fill'),
+    'attention': ('text-danger', 'bi-exclamation-octagon-fill'),
+    'neutral': ('text-body-secondary', 'bi-info-circle-fill'),
+    'empty': ('text-body-secondary', 'bi-cloud-arrow-up'),
+}[verdict.level] %}
+
+<!-- Announces runs starting and finishing; progress itself is not live. -->
+<div id="live-status" class="visually-hidden" role="status" aria-live="polite"></div>
+
+{% if not rclone_connected %}
+<div class="alert alert-danger d-flex gap-2 align-items-start" role="alert" id="rclone-down">
+    <i class="bi bi-plug-fill" aria-hidden="true"></i>
+    <div>
+        <strong>Cannot reach rclone.</strong>
+        Scheduled and manual runs will fail until it is back. Check that the rclone
+        service is running (restart the container or the app), then reload this page.
     </div>
-    <div class="card-body">
-        <div class="row text-center g-2 mb-3">
-            <div class="col-4">
-                <div class="border rounded py-2">
-                    <div class="fs-3 fw-semibold" id="health-total">{{ health.total }}</div>
-                    <div class="small text-body-secondary">Jobs</div>
-                </div>
+</div>
+{% endif %}
+
+<div data-refresh="verdict" class="verdict mb-4">
+    <h1 class="h4 verdict-title mb-1">
+        <i class="bi {{ verdict_icon[1] }} {{ verdict_icon[0] }}" aria-hidden="true"></i>
+        {{ verdict.headline }}
+    </h1>
+    {% if verdict.detail %}<p class="verdict-detail mb-0">{{ verdict.detail }}</p>{% endif %}
+</div>
+
+<!-- Active transfers: only visible while something runs -->
+<section data-refresh="active" id="active-section" class="card mb-4{{ '' if active_runs else ' d-none' }}" aria-labelledby="active-heading">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h2 class="h6 mb-0" id="active-heading"><i class="bi bi-arrow-repeat" aria-hidden="true"></i> Active transfers</h2>
+        <small class="text-body-secondary">
+            <span id="active-count">{{ active_runs|length }}</span> running
+            &middot; <span id="global-speed">--</span>
+            &middot; <span id="global-bytes">--</span> transferred
+        </small>
+    </div>
+    <div class="card-body" id="active-transfers">
+        {% for run in active_runs %}
+        {% set run_name = run.job.name if run.job else 'Unknown job' %}
+        <div class="transfer-item{{ ' mt-3' if not loop.first }}" data-run-id="{{ run.id }}" data-job-name="{{ run_name }}">
+            <div class="d-flex justify-content-between align-items-center gap-2 mb-1">
+                <strong class="text-truncate">{{ run_name }}</strong>
+                <span class="d-flex align-items-center gap-2 flex-shrink-0">
+                    <span class="transfer-speed text-body-secondary text-nowrap">--</span>
+                    <form action="{{ url_for('ops.stop_job', run_id=run.id) }}" method="post"
+                          data-confirm="Stop this run? Files already transferred stay where they are, and the run is recorded as stopped."
+                          data-confirm-label="Stop run">
+                        <button type="submit" class="btn btn-sm btn-outline-danger" aria-label="Stop {{ run_name }}">
+                            <i class="bi bi-stop-fill" aria-hidden="true"></i> Stop
+                        </button>
+                    </form>
+                </span>
             </div>
-            <div class="col-4">
-                <div class="border rounded py-2">
-                    <div class="fs-3 fw-semibold text-success" id="health-healthy">{{ health.healthy }}</div>
-                    <div class="small text-body-secondary">Healthy</div>
-                </div>
+            <div class="progress" style="height: 20px;">
+                <div class="progress-bar progress-bar-striped progress-bar-animated"
+                     role="progressbar" aria-label="Progress of {{ run_name }}"
+                     aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+                     style="width: 0%">0%</div>
             </div>
-            <div class="col-4">
-                <div class="border rounded py-2">
-                    <div class="fs-3 fw-semibold {{ 'text-danger' if health.attention else 'text-body-secondary' }}" id="health-attention">{{ health.attention }}</div>
-                    <div class="small text-body-secondary">Need attention</div>
-                </div>
-            </div>
+            <small class="text-body-secondary transfer-detail">Starting...</small>
         </div>
-        {% if health.jobs %}
+        {% endfor %}
+    </div>
+</section>
+
+<!-- One row per backup, problems first -->
+<section data-refresh="jobs" class="mb-4" aria-labelledby="jobs-heading">
+    <div class="d-flex justify-content-between align-items-baseline mb-2">
+        <h2 class="h6 section-label mb-0" id="jobs-heading">Backups</h2>
+        {% if rows %}<a href="{{ url_for('jobs.list_jobs') }}" class="small">Manage jobs</a>{% endif %}
+    </div>
+    {% if rows %}
+    <ul class="job-rows list-unstyled mb-0">
+        {% for r in rows %}
+        {% set h = r.entry %}
+        {% set style = state_style[h.state] %}
+        <li class="job-row" data-job-id="{{ h.job_id }}">
+            <div class="job-row-status">
+                <span class="badge bg-{{ style[0] }}"><i class="bi {{ style[1] }}" aria-hidden="true"></i> {{ style[2] }}</span>
+                {% if h.running %}<span class="badge bg-primary ms-1"><i class="bi bi-arrow-repeat" aria-hidden="true"></i> Running</span>{% endif %}
+            </div>
+            <div class="job-row-main">
+                <a href="{{ url_for('jobs.edit_job', job_id=h.job_id) }}" class="fw-semibold text-decoration-none">{{ h.name }}</a>
+                {% if r.reason %}<div class="job-row-reason">{{ r.reason }}{% if h.consecutive_failures > 1 %} <span class="text-body-secondary">&middot; {{ h.consecutive_failures }} failures in a row</span>{% endif %}</div>{% endif %}
+                <div class="job-row-path font-monospace text-body-secondary" title="{{ h.source }} &rarr; {{ h.destination }}">{{ h.source }} &rarr; {{ h.destination }}</div>
+            </div>
+            <dl class="job-row-times mb-0">
+                <div>
+                    <dt>Last success</dt>
+                    <dd{% if r.last_success_title %} title="{{ r.last_success_title }}"{% endif %}>{{ r.last_success_text }}</dd>
+                </div>
+                <div>
+                    <dt>Next run</dt>
+                    <dd{% if r.next_title %} title="{{ r.next_title }}"{% endif %}>{{ r.next_text or 'Not scheduled' }}</dd>
+                </div>
+            </dl>
+            <form action="{{ url_for('ops.start_job', job_id=h.job_id) }}" method="post" class="job-row-run">
+                <button type="submit" class="btn btn-sm btn-outline-secondary" title="Run {{ h.name }} now" aria-label="Run {{ h.name }} now"{% if h.running %} disabled{% endif %}>
+                    <i class="bi bi-play-fill" aria-hidden="true"></i><span class="d-none d-md-inline"> Run</span>
+                </button>
+            </form>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <div class="card"><div class="card-body">
+        <p class="mb-3">The dashboard shows whether each backup ran on time, when it runs next, and what is
+        transferring right now. Create a job to get started.</p>
+        <a href="{{ url_for('jobs.create_job') }}" class="btn btn-primary"><i class="bi bi-plus-lg" aria-hidden="true"></i> Create your first job</a>
+    </div></div>
+    {% endif %}
+</section>
+
+<!-- Recent runs -->
+<section data-refresh="recent" aria-labelledby="recent-heading">
+    <div class="d-flex justify-content-between align-items-baseline mb-2">
+        <h2 class="h6 section-label mb-0" id="recent-heading">Recent runs</h2>
+        <a href="{{ url_for('history.list_history') }}" class="small">View all history</a>
+    </div>
+    <div class="card">
         <div class="table-responsive">
-            <table class="table table-sm align-middle mb-0">
+            <table class="table table-hover align-middle mb-0">
                 <thead>
                     <tr>
-                        <th>State</th>
                         <th>Job</th>
-                        <th>Last success</th>
-                        <th>Next run</th>
+                        <th>Status</th>
+                        <th>Started</th>
+                        <th class="d-none d-md-table-cell">Duration</th>
+                        <th>Transferred</th>
+                        <th class="d-none d-lg-table-cell">Started by</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for h in health.jobs %}
-                    {% set style = state_style[h.state] %}
-                    <tr data-job-id="{{ h.job_id }}">
-                        <td>
-                            <span class="badge text-bg-{{ style[0] }}"><i class="bi {{ style[1] }}"></i> {{ style[2] }}</span>
+                    {% for run in recent_runs %}
+                    <tr>
+                        <td><a href="{{ url_for('history.detail', run_id=run.id) }}" class="text-decoration-none">{{ run.job.name if run.job else 'Deleted job' }}</a></td>
+                        <td class="text-nowrap">
+                            {% if run.status == 'running' %}
+                                <span class="badge bg-primary"><i class="bi bi-arrow-repeat" aria-hidden="true"></i> Running</span>
+                            {% elif run.status == 'completed' %}
+                                <span class="badge bg-success"><i class="bi bi-check-lg" aria-hidden="true"></i> Completed</span>
+                            {% elif run.status == 'failed' %}
+                                <span class="badge bg-danger"><i class="bi bi-x-lg" aria-hidden="true"></i> Failed</span>
+                            {% elif run.status == 'stopped' %}
+                                <span class="badge bg-warning"><i class="bi bi-stop-fill" aria-hidden="true"></i> Stopped</span>
+                            {% elif run.status == 'interrupted' %}
+                                <span class="badge bg-info"><i class="bi bi-pause-circle" aria-hidden="true"></i> Interrupted</span>
+                            {% elif run.status == 'held' %}
+                                <span class="badge bg-warning"><i class="bi bi-shield-exclamation" aria-hidden="true"></i> Held</span>
+                            {% elif run.status == 'skipped' %}
+                                <span class="badge bg-secondary"><i class="bi bi-skip-forward" aria-hidden="true"></i> Skipped</span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ run.status }}</span>
+                            {% endif %}
                         </td>
-                        <td>
-                            <a href="{{ url_for('jobs.edit_job', job_id=h.job_id) }}" class="fw-semibold text-decoration-none">{{ h.name }}</a>
-                            {% if h.running %}<span class="badge text-bg-primary ms-1"><i class="bi bi-arrow-repeat"></i> running</span>{% endif %}
-                            <div class="small text-body-secondary">{{ h.source }} &rarr; {{ h.destination }}</div>
-                            <div class="small">{{ h.detail }}{% if h.consecutive_failures > 0 %} <span class="text-body-secondary">&middot; {{ h.consecutive_failures }} failure{{ '' if h.consecutive_failures == 1 else 's' }} in a row</span>{% endif %}</div>
+                        <td class="text-nowrap">{{ run.started_at|local_time }}</td>
+                        <td class="d-none d-md-table-cell text-nowrap">
+                            {% if run.started_at and run.finished_at %}
+                                {{ (run.finished_at - run.started_at)|fmt_duration }}
+                            {% elif run.status == 'running' %}
+                                <span class="text-body-secondary">In progress</span>
+                            {% else %}--{% endif %}
                         </td>
-                        <td>
-                            {% if h.last_success %}
-                            <span title="{{ h.last_success|local_time }}">{{ h.last_success|time_ago }}</span>
-                            {% else %}<span class="text-body-secondary">never</span>{% endif %}
+                        <td class="text-nowrap">
+                            {% if run.status in ['completed', 'failed', 'stopped', 'interrupted'] %}
+                                {{ run.bytes_transferred|fmt_bytes }}
+                                <span class="text-body-secondary">({{ run.files_transferred or 0 }} files)</span>
+                            {% elif run.status == 'running' %}
+                                <span class="text-body-secondary">In progress</span>
+                            {% else %}--{% endif %}
                         </td>
-                        <td>
-                            {% if h.next_run %}{{ h.next_run|local_time }}{% else %}<span class="text-body-secondary">--</span>{% endif %}
-                        </td>
+                        <td class="d-none d-lg-table-cell text-body-secondary">{{ (run.triggered_by or '')|replace('_', ' ') }}</td>
                     </tr>
                     {% endfor %}
+                    {% if not recent_runs %}
+                    <tr>
+                        <td colspan="6" class="text-center text-body-secondary">No runs yet.</td>
+                    </tr>
+                    {% endif %}
                 </tbody>
             </table>
         </div>
-        {% else %}
-        <p class="text-body-secondary mb-0">No jobs yet. Once you create one, its health shows up here.</p>
-        {% endif %}
     </div>
-</div>
-
-<div class="row">
-    <!-- Status Cards -->
-    <div class="col-sm-6 col-lg-3 mb-3">
-        <div class="card stat-card">
-            <div class="card-body">
-                <div class="stat-icon"><i class="bi bi-hdd-network"></i></div>
-                <div>
-                    <div class="stat-label">rClone Status</div>
-                    {% if rclone_connected %}
-                        <p class="stat-value text-success">Connected</p>
-                    {% else %}
-                        <p class="stat-value text-danger">Disconnected</p>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-sm-6 col-lg-3 mb-3">
-        <div class="card stat-card">
-            <div class="card-body">
-                <div class="stat-icon"><i class="bi bi-arrow-left-right"></i></div>
-                <div>
-                    <div class="stat-label">Active Transfers</div>
-                    <p class="stat-value" id="active-count">{{ active_runs|length }}</p>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-sm-6 col-lg-3 mb-3">
-        <div class="card stat-card">
-            <div class="card-body">
-                <div class="stat-icon"><i class="bi bi-speedometer2"></i></div>
-                <div>
-                    <div class="stat-label">Transfer Speed</div>
-                    <p class="stat-value" id="global-speed">--</p>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-sm-6 col-lg-3 mb-3">
-        <div class="card stat-card">
-            <div class="card-body">
-                <div class="stat-icon"><i class="bi bi-database"></i></div>
-                <div>
-                    <div class="stat-label">Total Transferred</div>
-                    <p class="stat-value" id="global-bytes">--</p>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="row">
-    <!-- Active Transfers -->
-    <div class="col-lg-8 mb-3">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-arrow-repeat"></i> Active Transfers</span>
-            </div>
-            <div class="card-body">
-                <div id="active-transfers">
-                    {% if active_runs %}
-                        {% for run in active_runs %}
-                        <div class="transfer-item mb-3" data-run-id="{{ run.id }}">
-                            <div class="d-flex justify-content-between mb-1">
-                                <strong>{{ run.job.name if run.job else 'Unknown' }}</strong>
-                                <span>
-                                    <span class="transfer-speed text-muted">--</span>
-                                    <form action="{{ url_for('ops.stop_job', run_id=run.id) }}" method="post" class="d-inline">
-                                        <button type="submit" class="btn btn-sm btn-outline-danger ms-2">
-                                            <i class="bi bi-stop-fill"></i> Stop
-                                        </button>
-                                    </form>
-                                </span>
-                            </div>
-                            <div class="progress" style="height: 20px;">
-                                <div class="progress-bar progress-bar-striped progress-bar-animated"
-                                     role="progressbar" style="width: 0%">0%</div>
-                            </div>
-                            <small class="text-muted transfer-detail">Starting...</small>
-                        </div>
-                        {% endfor %}
-                    {% else %}
-                        <p class="text-muted mb-0" id="no-transfers-msg">No active transfers.</p>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Quick Actions -->
-    <div class="col-lg-4 mb-3">
-        <div class="card">
-            <div class="card-header">
-                <i class="bi bi-lightning"></i> Quick Start
-            </div>
-            <div class="card-body">
-                {% if jobs %}
-                    {% for job in jobs %}
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <div>
-                            <strong>{{ job.name }}</strong>
-                            <br><small class="text-muted">{{ job.sync_type }} &middot; {{ job.source }} &rarr; {{ job.destination }}</small>
-                        </div>
-                        <form action="{{ url_for('ops.start_job', job_id=job.id) }}" method="post">
-                            <button type="submit" class="btn btn-sm btn-success">
-                                <i class="bi bi-play-fill"></i>
-                            </button>
-                        </form>
-                    </div>
-                    {% if not loop.last %}<hr>{% endif %}
-                    {% endfor %}
-                {% else %}
-                    <p class="text-muted mb-0">No jobs defined. <a href="{{ url_for('jobs.create_job') }}">Create one</a>.</p>
-                {% endif %}
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Recent History -->
-<div class="row">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-journal-text"></i> Recent Runs</span>
-                <a href="{{ url_for('history.list_history') }}" class="btn btn-sm btn-outline-secondary">View All</a>
-            </div>
-            <div class="card-body p-0">
-                <table class="table table-hover mb-0">
-                    <thead>
-                        <tr>
-                            <th>Job</th>
-                            <th>Status</th>
-                            <th>Started</th>
-                            <th>Duration</th>
-                            <th>Transferred</th>
-                            <th>Trigger</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for run in recent_runs %}
-                        <tr>
-                            <td>{{ run.job.name if run.job else 'Deleted Job' }}</td>
-                            <td>
-                                {% if run.status == 'running' %}
-                                    <span class="badge bg-primary"><i class="bi bi-arrow-repeat"></i> Running</span>
-                                {% elif run.status == 'completed' %}
-                                    <span class="badge bg-success"><i class="bi bi-check-lg"></i> Completed</span>
-                                {% elif run.status == 'failed' %}
-                                    <span class="badge bg-danger"><i class="bi bi-x-lg"></i> Failed</span>
-                                {% elif run.status == 'stopped' %}
-                                    <span class="badge bg-warning text-dark"><i class="bi bi-stop-fill"></i> Stopped</span>
-                                {% elif run.status == 'interrupted' %}
-                                    <span class="badge bg-info"><i class="bi bi-pause-circle"></i> Interrupted</span>
-                                {% elif run.status == 'held' %}
-                                    <span class="badge bg-warning text-dark"><i class="bi bi-shield-exclamation"></i> Held</span>
-                                {% elif run.status == 'skipped' %}
-                                    <span class="badge bg-secondary"><i class="bi bi-skip-forward"></i> Skipped</span>
-                                {% endif %}
-                            </td>
-                            <td>{{ run.started_at|local_time }}</td>
-                            <td>
-                                {% if run.started_at and run.finished_at %}
-                                    {{ (run.finished_at - run.started_at)|fmt_duration }}
-                                {% elif run.status == 'running' %}
-                                    <span class="text-muted">In progress...</span>
-                                {% else %}
-                                    --
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if run.status in ['completed', 'failed', 'stopped', 'interrupted'] %}
-                                    {{ run.bytes_transferred|fmt_bytes }}
-                                    ({{ run.files_transferred or 0 }} files)
-                                {% elif run.status == 'running' %}
-                                    <span class="text-muted">In progress...</span>
-                                {% else %}
-                                    --
-                                {% endif %}
-                            </td>
-                            <td>
-                                <span class="badge bg-secondary">{{ run.triggered_by }}</span>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                        {% if not recent_runs %}
-                        <tr>
-                            <td colspan="6" class="text-center text-muted">No runs yet.</td>
-                        </tr>
-                        {% endif %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-</div>
+</section>
 {% endblock %}
 
 {% block scripts %}

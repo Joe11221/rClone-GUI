@@ -13,6 +13,17 @@ function makeEl(tag, className, text) {
     return node;
 }
 
+// Failure times use the configured TIMEZONE in 24h, matching the server's
+// local_time filter, rather than whatever locale the browser happens to use.
+function makeTimeFormatter(timeZone) {
+    const options = { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' };
+    try {
+        return new Intl.DateTimeFormat('en-GB', { ...options, timeZone });
+    } catch (e) {
+        return new Intl.DateTimeFormat('en-GB', options);
+    }
+}
+
 class RunErrors {
     constructor(root) {
         this.root = root;
@@ -20,6 +31,7 @@ class RunErrors {
         this.live = root.dataset.live === '1';
         this.maxRows = parseInt(root.dataset.maxRows, 10) || 0;  // 0 = no limit
         this.pageSize = parseInt(root.dataset.pageSize, 10) || 100;
+        this.timeFormat = makeTimeFormatter(root.dataset.tz || undefined);
         this.category = '';
         this.query = '';
         this.lastId = 0;     // newest failure shown, for the live feed
@@ -203,14 +215,36 @@ class RunErrors {
         tr.dataset.id = error.id;
         const time = error.occurred_at ? new Date(error.occurred_at) : null;
         const when = makeEl('td', 'text-muted text-nowrap small',
-            time ? time.toLocaleTimeString() : '');
+            time ? this.timeFormat.format(time) : '');
         const path = makeEl('td', 'font-monospace small re-path text-break',
             error.path || '(no file)');
         path.title = error.path || '';
         const message = makeEl('td', 'small re-msg', error.message);
-        tr.append(when, path, message);
-        // Messages can be long; click a row to read all of it.
-        tr.addEventListener('click', () => tr.classList.toggle('expanded'));
+        message.id = `re-msg-${this.runId}-${error.id}`;
+
+        // Messages can be long; the button is the keyboard route to read all of
+        // it, and clicking anywhere on the row does the same for the mouse.
+        const toggleCell = makeEl('td', 're-toggle-cell');
+        const toggle = makeEl('button', 'btn btn-sm btn-link re-toggle p-0');
+        toggle.type = 'button';
+        toggle.setAttribute('aria-expanded', 'false');
+        toggle.setAttribute('aria-controls', message.id);
+        toggle.setAttribute('aria-label', 'Show full message for ' + (error.path || 'failure'));
+        const icon = makeEl('i', 'bi bi-chevron-right');
+        icon.setAttribute('aria-hidden', 'true');
+        toggle.append(icon);
+        toggleCell.append(toggle);
+
+        const flip = () => {
+            const open = tr.classList.toggle('expanded');
+            toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+            toggle.setAttribute('aria-label',
+                (open ? 'Hide full message for ' : 'Show full message for ') + (error.path || 'failure'));
+            icon.className = open ? 'bi bi-chevron-down' : 'bi bi-chevron-right';
+        };
+        toggle.addEventListener('click', event => { event.stopPropagation(); flip(); });
+        tr.addEventListener('click', flip);
+        tr.append(toggleCell, when, path, message);
         return tr;
     }
 }
