@@ -14,11 +14,11 @@ from flask import (
     url_for,
 )
 
-from apscheduler.triggers.cron import CronTrigger
-
 from app.extensions import db
 from app.models import Job, Schedule
 from app.services import bandwidth, extra_flags
+from app.services.cron_trigger import cron_trigger
+from app.services.job_runner import JobAlreadyRunning
 
 jobs_bp = Blueprint("jobs", __name__)
 
@@ -127,6 +127,7 @@ def _form_values(job=None, form=None):
         return {
             **{k: form.get(k, "") for k in _TEXT_FIELDS},
             "fast_list": "fast_list" in form,
+            "preview_deletes": "preview_deletes" in form,
             "auto_resume": "auto_resume" in form,
             "schedule_enabled": "schedule_enabled" in form,
         }
@@ -150,6 +151,7 @@ def _form_values(job=None, form=None):
         "compare_method": (job.compare_method if job else None) or "default",
         "max_delete": job.max_delete if job and job.max_delete is not None else 1000,
         "max_age_hours": job.max_age_hours if job and job.max_age_hours else "",
+        "preview_deletes": job.preview_deletes is not False if job else True,
         "auto_resume": bool(job.auto_resume) if job else False,
         "max_retries": job.max_retries if job else 3,
         "retry_delay_seconds": job.retry_delay_seconds if job else 60,
@@ -228,7 +230,7 @@ def _parse_schedule(form):
     if not cron:
         return "", None
     try:
-        CronTrigger.from_crontab(
+        cron_trigger(
             cron, timezone=current_app.config["SCHEDULER_SERVICE"].timezone
         )
     except ValueError:
@@ -316,6 +318,7 @@ def _save_job(job):
     job.order_by_mixed_window = order_by_mixed_window
     job.compare_method = _parse_compare_method(form)
     job.max_delete = _parse_max_delete(form)
+    job.preview_deletes = "preview_deletes" in form
     job.max_age_hours = _parse_max_age_hours(form)
     job.auto_resume = "auto_resume" in form
     job.max_retries = int(form.get("max_retries", 3))
@@ -361,6 +364,23 @@ def edit_job(job_id):
         flash(f"Job '{job.name}' updated.", "success")
         return redirect(url_for("jobs.list_jobs"))
     return _render_form(job, _form_values(job))
+
+
+@jobs_bp.route("/<int:job_id>/dry-run", methods=["POST"])
+def dry_run_job(job_id):
+    """Run the job with rclone's --dry-run: shows what would change, changes nothing."""
+    job = Job.query.get_or_404(job_id)
+    runner = current_app.config["JOB_RUNNER"]
+    try:
+        runner.start_job(job, dry_run=True)
+        flash(
+            f"Dry run of '{job.name}' started. Nothing will be changed.", "info"
+        )
+    except JobAlreadyRunning as e:
+        flash(str(e), "warning")
+    except Exception as e:
+        flash(f"Failed to start the dry run: {e}", "danger")
+    return redirect(url_for("ops.running"))
 
 
 @jobs_bp.route("/api/browse")

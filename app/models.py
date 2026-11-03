@@ -30,6 +30,9 @@ class Job(db.Model):
     retry_delay_seconds = db.Column(db.Integer, default=60)
     # Stop a sync after this many deletions at the destination (-1 = no limit).
     max_delete = db.Column(db.Integer, default=1000)
+    # Sync only: dry-run first and hold the run if it would delete more than
+    # ``max_delete`` files, so a missing source is caught before anything goes.
+    preview_deletes = db.Column(db.Boolean, default=True)
     # Expect a success at least this often (None = derive it from the schedule).
     max_age_hours = db.Column(db.Integer, nullable=True)
     health_state = db.Column(db.String(20), nullable=True)
@@ -58,7 +61,7 @@ class Job(db.Model):
     def get_extra_flags(self):
         return json.loads(self.extra_flags)
 
-    def to_rclone_config(self):
+    def to_rclone_config(self, dry_run=False):
         config = {
             "Transfers": self.transfers,
             "Checkers": self.checkers,
@@ -94,6 +97,11 @@ class Job(db.Model):
         ):
             config["MaxDelete"] = self.max_delete
         config.update(self.get_extra_flags())
+        if dry_run:
+            # Nothing is changed, so there is nothing to cap, and the full
+            # count is the point. Also drops a MaxDelete from the extra flags.
+            config["DryRun"] = True
+            config.pop("MaxDelete", None)
         return config
 
     def to_rclone_filter(self):
@@ -175,8 +183,15 @@ class RunHistory(db.Model):
     # even after the job is edited.
     config_snapshot = db.Column(db.Text, nullable=True)
     # Safety check that stopped the run: source_empty | source_unreachable |
-    # delete_limit.
+    # delete_preview | preview_failed | delete_limit.
     guard = db.Column(db.String(30), nullable=True)
+    # "preview" while the dry run that counts deletions is still going (the run
+    # stays ``running``; rclone_jobid/stats_group then belong to that dry run).
+    phase = db.Column(db.String(10), nullable=True)
+    # Files a sync would delete, from the preview or from a dry run.
+    would_delete = db.Column(db.Integer, nullable=True)
+    # JSON list of up to 50 of those paths (rclone only reports the latest ~100).
+    would_delete_paths = db.Column(db.Text, nullable=True)
 
     def get_config_snapshot(self):
         if not self.config_snapshot:
@@ -185,6 +200,16 @@ class RunHistory(db.Model):
             return json.loads(self.config_snapshot)
         except ValueError:
             return None
+
+    def get_would_delete_paths(self):
+        try:
+            return json.loads(self.would_delete_paths or "[]")
+        except ValueError:
+            return []
+
+    @property
+    def is_dry_run(self):
+        return self.triggered_by == "dry_run"
 
     retry_of = db.relationship(
         "RunHistory", remote_side="RunHistory.id", uselist=False

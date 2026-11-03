@@ -8,10 +8,11 @@ Events and their data (all keyword arguments):
 ``run_finished``
     run_id, job_id, job_name, status (completed | failed | stopped |
     interrupted), errors (int), error_message (str or None), guard (str or
-    None), will_retry (bool: an automatic retry has been scheduled)
+    None), will_retry (bool: an automatic retry has been scheduled).
+    Never emitted for dry runs (triggered_by "dry_run").
 ``run_held``
-    run_id, job_id, job_name, guard (source_empty | source_unreachable),
-    reason (str, readable)
+    run_id, job_id, job_name, guard (source_empty | source_unreachable |
+    delete_preview | preview_failed), reason (str, readable)
 ``run_skipped``
     run_id, job_id, job_name, reason (str)
 ``health_changed``

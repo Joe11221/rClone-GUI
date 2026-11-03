@@ -167,7 +167,7 @@ def test_enabling_a_schedule_resets_the_baseline(app, client, fake_rclone):
 def test_describe_endpoint_and_list_shows_words(app, client, fake_rclone):
     _job_with_schedule(app, client)
     data = client.get("/schedules/describe?expr=0 2 * * *").get_json()
-    assert data == {"text": "Every day at 02:00", "described": True}
+    assert data["text"] == "Every day at 02:00" and data["described"] is True
     assert client.get("/schedules/describe?expr=nonsense").get_json()["described"] is False
     page = client.get("/schedules/").data.decode()
     assert "Every day at 02:00" in page and "<code>0 2 * * *</code>" in page
@@ -224,3 +224,51 @@ def test_invalid_cron_is_refused_with_the_typed_text_kept(app, client):
     assert resp.status_code == 400
     with app.app_context():
         assert Schedule.query.one().cron_expression == "0 3 * * *"
+
+
+def test_describe_valid_expression_lists_next_runs(client):
+    data = client.get("/schedules/describe?expr=30 1 * * mon-fri").get_json()
+    assert data["text"] == "Weekdays at 01:30"
+    assert data["error"] is None
+    assert len(data["next"]) == 3
+    # "Tue 2026-11-03 01:30": weekday, date and time, all at 01:30 on a weekday.
+    assert all(run.endswith("01:30") and run[:3] not in ("Sat", "Sun") for run in data["next"])
+
+
+def test_describe_invalid_expression_gives_the_error(client):
+    data = client.get("/schedules/describe?expr=99 * * *").get_json()
+    assert "Not a valid cron expression" in data["error"]
+    assert data["next"] == [] and data["described"] is False
+
+
+def test_describe_empty_expression_is_not_an_error(client):
+    data = client.get("/schedules/describe?expr=").get_json()
+    assert data == {"text": "", "described": False, "error": None, "next": []}
+
+
+def test_describe_expression_that_never_fires_has_no_next_runs(client):
+    data = client.get("/schedules/describe?expr=0 0 31 2 *").get_json()
+    assert data["error"] is None and data["next"] == []
+
+
+def test_schedule_form_renders_the_builder(client):
+    page = client.get("/schedules/create").get_data(as_text=True)
+    assert "data-cron-builder" in page and 'data-allow-empty="0"' in page
+    assert 'name="cron_expression"' in page and "js/cronbuilder.js" in page
+    assert 'value="manual"' not in page  # a cron is required here
+
+
+def test_builder_cron_is_saved_from_the_schedule_form(app, client):
+    client.post(
+        "/jobs/create",
+        data={"name": "j", "source": "/a", "destination": "b:", "sync_type": "copy"},
+    )
+    with app.app_context():
+        job_id = Job.query.one().id
+    resp = client.post(
+        "/schedules/create",
+        data={"job_id": job_id, "cron_expression": "30 1 * * mon-fri", "enabled": "on"},
+    )
+    assert resp.status_code == 302
+    with app.app_context():
+        assert Schedule.query.one().cron_expression == "30 1 * * mon-fri"

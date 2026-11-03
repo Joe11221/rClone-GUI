@@ -16,10 +16,20 @@
 {% set dest_label = f.destination or 'the destination' %}
 <div class="row justify-content-center">
     <div class="col-lg-8">
-        <h1 class="h4 mb-3">
-            <i class="bi bi-{{ 'pencil' if job else 'plus-lg' }}"></i>
-            {{ 'Edit' if job else 'Create' }} Job
-        </h1>
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+            <h1 class="h4 mb-0">
+                <i class="bi bi-{{ 'pencil' if job else 'plus-lg' }}"></i>
+                {{ 'Edit' if job else 'Create' }} Job
+            </h1>
+            {% if job %}
+            <form method="post" action="{{ url_for('jobs.dry_run_job', job_id=job.id) }}">
+                <button type="submit" class="btn btn-outline-secondary"
+                        title="Run with --dry-run: shows what would change, changes nothing">
+                    <i class="bi bi-eye" aria-hidden="true"></i> Dry run
+                </button>
+            </form>
+            {% endif %}
+        </div>
 
         <form method="post" id="job-form">
             <div class="card mb-3">
@@ -117,8 +127,16 @@
                                 <label for="max_delete" class="form-label">Delete limit</label>
                                 <input type="number" class="form-control" id="max_delete" name="max_delete"
                                        value="{{ f.max_delete }}" min="-1" aria-describedby="max_delete_help">
-                                <div class="form-text" id="max_delete_help">Stops the sync once it has deleted this many files from <code data-dest-name{% if not f.destination %} class="jf-dest-placeholder"{% endif %}>{{ dest_label }}</code>. Guards against a missing or empty source. -1 means no limit.</div>
+                                <div class="form-text" id="max_delete_help">The most files a sync may delete from <code data-dest-name{% if not f.destination %} class="jf-dest-placeholder"{% endif %}>{{ dest_label }}</code>. With the count below on, a sync that would delete more is held before it starts. Either way rclone stops a sync that reaches this many deletions. Guards against a missing or empty source. -1 means no limit.</div>
                             </div>
+                        </div>
+                        <div class="form-check form-switch mt-3">
+                            <input type="checkbox" class="form-check-input" id="preview_deletes" name="preview_deletes"
+                                   role="switch" aria-describedby="preview_deletes_help" {{ 'checked' if f.preview_deletes }}>
+                            <label class="form-check-label" for="preview_deletes">Count deletions before each run</label>
+                        </div>
+                        <div class="form-text" id="preview_deletes_help">Runs a dry run first and holds the sync if it would delete more files than the delete limit. This adds one extra scan of both sides.
+                            <span id="preview_deletes_off" hidden>It has no effect while the delete limit is -1.</span>
                         </div>
                     </fieldset>
                 </div>
@@ -127,26 +145,21 @@
             <div class="card mb-3">
                 <div class="card-header"><h2 class="h6 mb-0"><i class="bi bi-clock"></i> Schedule</h2></div>
                 <div class="card-body">
+                    {% set cron_id = "schedule_cron" %}
+                    {% set cron_name = "schedule_cron" %}
+                    {% set cron_value = f.schedule_cron %}
+                    {% set cron_error = errors.get("schedule_cron") %}
+                    {% set cron_tz = schedule_tz %}
+                    {% set cron_required = false %}
+                    {% set cron_help = "Leave empty to run this job only when you start it." %}
                     <div class="mb-3">
-                        <label for="schedule_cron" class="form-label">Cron expression</label>
-                        <input type="text" class="form-control font-monospace{{ ' is-invalid' if errors.get('schedule_cron') }}"
-                               id="schedule_cron" name="schedule_cron" value="{{ f.schedule_cron }}"
-                               placeholder="min hour dom mon dow, e.g. 0 2 * * *" autocomplete="off" spellcheck="false"
-                               aria-describedby="schedule_cron_help cron-preview{{ ' schedule_cron-error' if errors.get('schedule_cron') }}"
-                               {% if errors.get('schedule_cron') %}aria-invalid="true"{% endif %}>
-                        {{ field_errors('schedule_cron') }}
-                        <div class="form-text" id="cron-preview" aria-live="polite">
-                            {% if f.schedule_cron and not errors.get('schedule_cron') %}{{ f.schedule_cron | cron_text }}{% endif %}
-                        </div>
-                        <div class="form-text" id="schedule_cron_help">
-                            Leave empty to run this job only when you start it. Times are in {{ schedule_tz }}.
-                        </div>
+                        {% include "partials/cron_builder.html" %}
                     </div>
                     <div class="d-flex flex-wrap gap-2 mb-3" role="group" aria-label="Schedule presets">
                         <button type="button" class="btn btn-sm btn-outline-secondary cron-preset" data-cron="0 2 * * *">Daily 2 AM</button>
                         <button type="button" class="btn btn-sm btn-outline-secondary cron-preset" data-cron="0 */6 * * *">Every 6 hours</button>
-                        <button type="button" class="btn btn-sm btn-outline-secondary cron-preset" data-cron="0 3 * * 1-5">Weekdays 3 AM</button>
-                        <button type="button" class="btn btn-sm btn-outline-secondary cron-preset" data-cron="0 0 * * 0">Weekly Sun midnight</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary cron-preset" data-cron="0 3 * * mon-fri">Weekdays 3 AM</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary cron-preset" data-cron="0 0 * * sun">Weekly Sun midnight</button>
                     </div>
                     <div class="form-check form-switch mb-0">
                         <input type="checkbox" class="form-check-input" id="schedule_enabled" name="schedule_enabled"
@@ -518,5 +531,6 @@ function selectCurrent() {
     bootstrap.Modal.getInstance(document.getElementById('browseModal')).hide();
 }
 </script>
+<script src="{{ url_for('static', filename='js/cronbuilder.js') }}"></script>
 <script src="{{ url_for('static', filename='js/jobform.js') }}"></script>
 {% endblock %}

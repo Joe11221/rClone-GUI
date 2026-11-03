@@ -31,30 +31,24 @@
                     </div>
                     {% endif %}
 
+                    {% set cron_id = "cron_expression" %}
+                    {% set cron_name = "cron_expression" %}
+                    {% set cron_value = cron_value or (schedule.cron_expression if schedule else '0 2 * * *') %}
+                    {% set cron_tz = timezone_name %}
+                    {% set cron_required = true %}
+                    {% set cron_help = "Five fields: minute hour day-of-month month day-of-week." %}
                     <div class="mb-3">
-                        <label for="cron_expression" class="form-label">Cron Expression</label>
-                        {% set cron_shown = cron_value or (schedule.cron_expression if schedule else '0 2 * * *') %}
-                        <input type="text" class="form-control font-monospace{{ ' is-invalid' if cron_error }}" id="cron_expression" name="cron_expression"
-                               value="{{ cron_shown }}" required
-                               placeholder="min hour dom mon dow"{% if cron_error %} aria-describedby="cron-error"{% endif %}>
-                        {% if cron_error %}<div class="invalid-feedback" id="cron-error">{{ cron_error }}</div>{% endif %}
-                        <div class="form-text">
-                            Format: minute hour day-of-month month day-of-week. Times use {{ timezone_name }}.
-                        </div>
-                        <div class="mt-2" aria-live="polite">
-                            <span class="text-muted small">Runs:</span>
-                            <span id="cron-preview" data-url="{{ url_for('schedules.describe') }}">{{ cron_shown | cron_text }}</span>
-                        </div>
+                        {% include "partials/cron_builder.html" %}
                     </div>
 
                     <div class="mb-3">
                         <label class="form-label">Presets</label>
                         <div class="d-flex flex-wrap gap-2">
                             <button type="button" class="btn btn-sm btn-outline-secondary cron-preset" data-cron="0 2 * * *">Daily 2 AM</button>
-                            <button type="button" class="btn btn-sm btn-outline-secondary cron-preset" data-cron="0 0 * * 0">Weekly Sun midnight</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary cron-preset" data-cron="0 0 * * sun">Weekly Sun midnight</button>
                             <button type="button" class="btn btn-sm btn-outline-secondary cron-preset" data-cron="0 */6 * * *">Every 6 hours</button>
                             <button type="button" class="btn btn-sm btn-outline-secondary cron-preset" data-cron="0 */12 * * *">Every 12 hours</button>
-                            <button type="button" class="btn btn-sm btn-outline-secondary cron-preset" data-cron="0 3 * * 1-5">Weekdays 3 AM</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary cron-preset" data-cron="0 3 * * mon-fri">Weekdays 3 AM</button>
                             <button type="button" class="btn btn-sm btn-outline-secondary cron-preset" data-cron="0 0 1 * *">Monthly 1st midnight</button>
                         </div>
                     </div>
@@ -83,30 +77,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
-    const cronInput = document.getElementById('cron_expression');
-    const cronPreview = document.getElementById('cron-preview');
-    let previewTimer = null;
-    // The server owns the wording so the list and the form can never disagree.
-    function updatePreview() {
-        const expr = cronInput.value.trim();
-        if (!expr) { cronPreview.textContent = 'Enter a cron expression'; return; }
-        fetch(cronPreview.dataset.url + '?expr=' + encodeURIComponent(expr))
-            .then(r => r.json())
-            .then(d => {
-                cronPreview.textContent = d.described ? d.text : 'Cannot describe this expression; it will run as written.';
-            })
-            .catch(() => {});
-    }
-    cronInput.addEventListener('input', () => {
-        clearTimeout(previewTimer);
-        previewTimer = setTimeout(updatePreview, 250);
-    });
-    document.querySelectorAll('.cron-preset').forEach(btn => {
-        btn.addEventListener('click', () => {
-            cronInput.value = btn.dataset.cron;
-            updatePreview();
-        });
-    });
-</script>
+<script src="{{ url_for('static', filename='js/cronbuilder.js') }}"></script>
 {% endblock %}

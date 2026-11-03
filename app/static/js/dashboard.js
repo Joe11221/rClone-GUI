@@ -72,16 +72,24 @@ function handleRunSetChange(currentIds) {
     }, finished.length ? 1500 : 500);  // let the run record settle before re-reading it
 }
 
+// A run's phase changes (counting deletions, then transferring) without the
+// set of runs changing, so re-read the page while any run is still counting.
+setInterval(() => {
+    if (document.querySelector('.transfer-item.is-preview')) refreshSections();
+}, 4000);
+
 window.addEventListener('rclone-stats', function(e) {
     const data = e.detail;
     const runs = data.runs || {};
 
     // Update global stats cards (aggregated from our app's runs only)
     const speedEl = document.getElementById('global-speed');
-    if (speedEl) speedEl.textContent = formatSpeed(data.total_speed || 0);
+    if (speedEl) speedEl.textContent = data.active_count > 0 ? formatSpeed(data.total_speed || 0) : '--';
 
+    // The card shows the last 24 hours: finished runs (rendered by the server)
+    // plus what the running ones have moved so far.
     const bytesEl = document.getElementById('global-bytes');
-    if (bytesEl) bytesEl.textContent = formatBytes(data.total_bytes || 0);
+    if (bytesEl) bytesEl.textContent = formatBytes((Number(bytesEl.dataset.base) || 0) + (data.total_bytes || 0));
 
     const activeEl = document.getElementById('active-count');
     if (activeEl) activeEl.textContent = data.active_count || 0;
@@ -90,9 +98,8 @@ window.addEventListener('rclone-stats', function(e) {
     const activeRunIds = new Set(Object.keys(runs));
     handleRunSetChange(activeRunIds);
 
-    // The Active transfers section exists only while something runs
-    const activeSection = document.getElementById('active-section');
-    if (activeSection) activeSection.classList.toggle('d-none', !(data.active_count > 0));
+    const emptyEl = document.getElementById('active-empty');
+    if (emptyEl) emptyEl.classList.toggle('d-none', data.active_count > 0);
 
     // Update each transfer item with its own per-run stats
     const transferItems = document.querySelectorAll('.transfer-item');
@@ -102,6 +109,8 @@ window.addEventListener('rclone-stats', function(e) {
 
         const stats = runs[runId].stats;
         if (!stats) return;
+        // Counting deletions has no meaningful percentage; the bar stays indeterminate.
+        if (item.classList.contains('is-preview')) return;
 
         // Initialize tracking for this run if needed
         if (!lastKnownStats[runId]) {

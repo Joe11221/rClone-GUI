@@ -63,7 +63,7 @@ def stop_job(run_id):
 @ops_bp.route("/resume/<int:run_id>", methods=["POST"])
 def resume_run(run_id):
     run = RunHistory.query.get_or_404(run_id)
-    if run.status not in ("failed", "interrupted"):
+    if run.status not in ("failed", "interrupted") or run.is_dry_run:
         flash("Only failed or interrupted runs can be resumed.", "warning")
         return redirect(url_for("history.detail", run_id=run_id))
 

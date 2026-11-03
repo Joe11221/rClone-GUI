@@ -27,7 +27,7 @@
         <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
             <h1 class="h4 mb-0"><i class="bi bi-journal-text"></i> Run #{{ run.id }}</h1>
             <div class="d-flex gap-2">
-                {% if run.status in ['failed', 'interrupted'] and run.job and not run.guard %}
+                {% if run.status in ['failed', 'interrupted'] and run.job and not run.guard and not run.is_dry_run %}
                 <form method="post" action="{{ url_for('ops.resume_run', run_id=run.id) }}">
                     <button type="submit" class="btn btn-outline-secondary">
                         <i class="bi bi-arrow-clockwise"></i> Resume
@@ -35,6 +35,11 @@
                 </form>
                 {% endif %}
                 {% if run.guard and run.status in ['held', 'failed'] and run.job %}
+                <form method="post" action="{{ url_for('jobs.dry_run_job', job_id=run.job_id) }}">
+                    <button type="submit" class="btn btn-outline-secondary">
+                        <i class="bi bi-eye"></i> Preview this sync
+                    </button>
+                </form>
                 <form method="post" action="{{ url_for('ops.start_job', job_id=run.job_id) }}"
                       data-confirm="This run will skip the safety checks and may delete files at the destination. Continue?" data-confirm-label="Run anyway">
                     <input type="hidden" name="override" value="1">
@@ -54,6 +59,9 @@
                 <h2 class="h5 mb-2" id="summary-h">
                     {{ job_name }}
                     {{ status_badge(run) }}
+                    {% if run.is_dry_run %}
+                        <span class="badge bg-secondary ms-1">Dry run</span>
+                    {% endif %}
                     {% if run.retry_count > 0 %}
                         <span class="badge bg-secondary ms-1">Retry #{{ run.retry_count }}</span>
                     {% endif %}
@@ -72,6 +80,18 @@
                 {% if run.error_message %}
                 <p class="mb-2 text-break">{{ run.error_message }}</p>
                 {% endif %}
+                {% if run.is_dry_run and run.status != 'running' %}
+                {% set verb = 'move' if run.job and run.job.sync_type == 'move' else 'copy' %}
+                <p class="mb-2">
+                    Dry run. Nothing was changed. It would {{ verb }} {{ "{:,}".format(run.files_transferred or 0) }} file{{ '' if run.files_transferred == 1 else 's' }} ({{ run.bytes_transferred|fmt_bytes }})
+                    {%- if (run.job and run.job.sync_type == 'sync') or run.deletes %} and delete {{ "{:,}".format(run.deletes or 0) }} file{{ '' if run.deletes == 1 else 's' }}{% endif %}.
+                </p>
+                {% elif run.is_dry_run %}
+                <p class="mb-2">Dry run in progress. Nothing is being changed.</p>
+                {% endif %}
+                {% if run.would_delete is not none and not run.is_dry_run and run.guard != 'delete_preview' %}
+                <p class="mb-2">The deletion preview counted {{ "{:,}".format(run.would_delete) }} file{{ '' if run.would_delete == 1 else 's' }} to delete.</p>
+                {% endif %}
                 <div class="row text-center mt-3 g-2">
                     <div class="col-4">
                         <div class="h5 mb-0">{{ run.bytes_transferred|fmt_bytes }}</div>
@@ -89,6 +109,21 @@
             </div>
         </section>
 
+        {% set would_paths = run.get_would_delete_paths() %}
+        {% if would_paths %}
+        <section class="card mb-3" aria-labelledby="would-h">
+            <div class="card-body">
+                <h2 class="h5 mb-2" id="would-h">Files it would delete</h2>
+                <ul class="font-monospace small mb-2 ps-3">
+                    {% for path in would_paths %}<li class="text-break">{{ path }}</li>{% endfor %}
+                </ul>
+                {% if run.would_delete and run.would_delete > would_paths|length %}
+                <p class="small text-muted mb-0">Showing {{ would_paths|length }} of {{ "{:,}".format(run.would_delete) }}. rclone only reports the most recent entries.</p>
+                {% endif %}
+            </div>
+        </section>
+        {% endif %}
+
         {% if run.errors or error_count %}
         <section class="card mb-3">
             <div class="card-body">
@@ -104,7 +139,7 @@
                     <dt class="col-sm-4 text-muted fw-normal">Job</dt>
                     <dd class="col-sm-8 text-break">{{ job_name }}</dd>
                     <dt class="col-sm-4 text-muted fw-normal">Triggered by</dt>
-                    <dd class="col-sm-8"><span class="badge bg-secondary">{{ run.triggered_by }}</span></dd>
+                    <dd class="col-sm-8"><span class="badge bg-secondary">{{ 'Dry run' if run.is_dry_run else run.triggered_by }}</span></dd>
                     {% if run.retry_of_run_id %}
                     <dt class="col-sm-4 text-muted fw-normal">Retry of</dt>
                     <dd class="col-sm-8"><a href="{{ url_for('history.detail', run_id=run.retry_of_run_id) }}">Run #{{ run.retry_of_run_id }}</a></dd>

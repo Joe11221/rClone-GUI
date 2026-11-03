@@ -4,7 +4,8 @@ from datetime import timezone as dt_timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.schedulers.base import STATE_PAUSED
-from apscheduler.triggers.cron import CronTrigger
+
+from app.services.cron_trigger import cron_trigger
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ class SchedulerService:
         baseline = schedule.catch_up_after or schedule.created_at
         if baseline is None:
             return False
-        trigger = CronTrigger.from_crontab(
+        trigger = cron_trigger(
             schedule.cron_expression, timezone=self.timezone
         )
         next_fire = trigger.get_next_fire_time(
@@ -65,7 +66,7 @@ class SchedulerService:
 
     def add_schedule(self, schedule):
         job_id = f"schedule_{schedule.id}"
-        trigger = CronTrigger.from_crontab(
+        trigger = cron_trigger(
             schedule.cron_expression, timezone=self.timezone
         )
         self.scheduler.add_job(

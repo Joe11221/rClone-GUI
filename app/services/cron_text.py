@@ -23,22 +23,42 @@ def _day_index(token):
     return _DAY_ABBR.get(token[:3]) if token[:3] in _DAY_ABBR else None
 
 
+def _expand_days(field):
+    """Day indexes in the order written, ranges like mon-wed expanded; None if
+    any part isn't a plain day or range."""
+    days = []
+    for part in field.split(","):
+        lo, _, hi = part.partition("-")
+        start = _day_index(lo)
+        if start is None:
+            return None
+        if not hi:
+            days.append(start)
+            continue
+        # A range may end on 7 or Sunday, which _day_index folds to 0.
+        end = _day_index(hi)
+        if end is None:
+            return None
+        end = end or 7
+        if start > end:
+            return None
+        days.extend(d % 7 for d in range(start, end + 1))
+    return list(dict.fromkeys(days))
+
+
 def _describe_days(field):
     """'1-5' -> 'Weekdays'-style text; None when not confidently describable."""
-    if field.lower() in ("1-5", "mon-fri"):
+    days = _expand_days(field)
+    if days is None:
+        return None
+    if sorted(days) == [1, 2, 3, 4, 5]:
         return "Weekdays"
-    if field in ("0,6", "6,0", "6,7", "0,7"):
+    if sorted(days) == [0, 6]:
         return "Weekends"
-    parts = field.split(",")
-    days = []
-    for p in parts:
-        idx = _day_index(p)
-        if idx is None:
-            return None
-        days.append(_DAYS[idx])
-    if len(days) == 1:
-        return f"Every {days[0]}"
-    return "Every " + ", ".join(days[:-1]) + " and " + days[-1]
+    names = [_DAYS[d] for d in days]
+    if len(names) == 1:
+        return f"Every {names[0]}"
+    return "Every " + ", ".join(names[:-1]) + " and " + names[-1]
 
 
 def _step(field, limit):

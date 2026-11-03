@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from flask import (
     Blueprint,
@@ -10,11 +10,10 @@ from flask import (
     url_for,
 )
 
-from apscheduler.triggers.cron import CronTrigger
-
 from app.extensions import db
 from app.models import Job, Schedule
 from app.services.cron_text import describe_cron
+from app.services.cron_trigger import cron_trigger
 
 schedules_bp = Blueprint("schedules", __name__)
 
@@ -43,16 +42,44 @@ def list_schedules():
 
 @schedules_bp.route("/describe")
 def describe():
-    """Plain-words reading of ?expr=, for the live preview on the form."""
-    expr = (request.args.get("expr") or "").strip()[:100]
+    """Reading of ?expr= for the live preview on the forms: plain words, why
+    the scheduler would refuse it, and the next few run times."""
+    expr = " ".join((request.args.get("expr") or "").split())[:100]
     text = describe_cron(expr)
-    return {"text": text, "described": bool(expr) and text != expr}
+    error = _cron_error(expr) if expr else None
+    return {
+        "text": text,
+        "described": bool(expr) and text != expr,
+        "error": error,
+        "next": _next_runs(expr) if expr and not error else [],
+    }
+
+
+def _next_runs(cron, count=3):
+    """The next few fire times of a valid expression, in the scheduler's
+    timezone and the app's usual date format."""
+    trigger = cron_trigger(
+        cron, timezone=current_app.config["SCHEDULER_SERVICE"].timezone
+    )
+    cursor = datetime.now(trigger.timezone)
+    runs = []
+    for _ in range(count):
+        try:
+            fire = trigger.get_next_fire_time(None, cursor)
+        except (OverflowError, OSError):
+            # An impossible date (31 February) searches past the year range.
+            fire = None
+        if fire is None:
+            break
+        runs.append(fire.strftime("%a %Y-%m-%d %H:%M"))
+        cursor = fire + timedelta(seconds=1)
+    return runs
 
 
 def _cron_error(cron):
     """Why the scheduler would refuse this expression, or None."""
     try:
-        CronTrigger.from_crontab(
+        cron_trigger(
             cron, timezone=current_app.config["SCHEDULER_SERVICE"].timezone
         )
     except ValueError:

@@ -1,5 +1,5 @@
 // Behaviour of the job form: what each type does to the typed destination,
-// the safety and warning panels, the schedule preview and the Advanced summary.
+// the safety and warning panels and the Advanced summary.
 (function () {
     const form = document.getElementById('job-form');
     if (!form) return;
@@ -22,11 +22,15 @@
         });
         // The delete limit is only applied to syncs.
         $('safety-group').hidden = selectedType() !== 'sync';
+        // With no limit there is nothing to compare the count to. The switch
+        // keeps its state, so setting a limit again brings it back as it was.
+        $('preview_deletes_off').hidden = Number($('max_delete').value) !== -1;
         const risky = selectedType() === 'move' && autoResume.checked;
         form.querySelectorAll('[data-move-resume-warning]').forEach(el => { el.hidden = !risky; });
     }
 
     destination.addEventListener('input', refreshType);
+    $('max_delete').addEventListener('input', refreshType);
     typeInputs.forEach(i => i.addEventListener('change', refreshType));
 
     // --- Auto-resume options ---
@@ -54,36 +58,7 @@
         });
     });
 
-    // --- Schedule: presets and a plain-words reading of the cron text ---
-
-    const cron = $('schedule_cron');
-    const preview = $('cron-preview');
-    let previewTimer = null;
-    let previewToken = 0;
-
-    function refreshPreview() {
-        const expr = cron.value.trim().replace(/\s+/g, ' ');
-        if (!expr) { preview.textContent = ''; return; }
-        const token = ++previewToken;
-        fetch('/schedules/describe?expr=' + encodeURIComponent(expr))
-            .then(r => r.json())
-            .then(data => {
-                if (token !== previewToken) return;  // a newer keystroke won
-                preview.textContent = data.described ? data.text : '';
-            })
-            .catch(() => { if (token === previewToken) preview.textContent = ''; });
-    }
-
-    cron.addEventListener('input', () => {
-        clearTimeout(previewTimer);
-        previewTimer = setTimeout(refreshPreview, 250);
-    });
-    form.querySelectorAll('.cron-preset').forEach(button => {
-        button.addEventListener('click', () => {
-            cron.value = button.dataset.cron;
-            refreshPreview();
-        });
-    });
+    // --- Schedule: the builder, presets and live reading live in cronbuilder.js ---
 
     // --- Advanced: how many things differ from the defaults ---
 

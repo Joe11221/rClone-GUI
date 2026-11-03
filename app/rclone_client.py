@@ -98,6 +98,10 @@ class RcloneClient:
         """Cheap liveness check."""
         return self._call("rc/noop", timeout=5)
 
+    def version(self):
+        """rclone's own version, e.g. {"version": "v1.68.2"}."""
+        return self._call("core/version", timeout=5)
+
     def list_remotes(self):
         return self._call("config/listremotes")
 

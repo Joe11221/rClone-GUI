@@ -12,12 +12,15 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from datetime import timezone as dt_timezone
 
-from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import and_, or_
+
+from app.services.cron_trigger import cron_trigger
 
 logger = logging.getLogger(__name__)
 
 FAILURE_STATUSES = ("failed", "held")
+# triggered_by of a run that changed nothing; it says nothing about health.
+DRY_RUN = "dry_run"
 ATTENTION_STATES = ("failing", "overdue", "warning")
 # "pending": scheduled (or time-limited) and waiting for a first success.
 # "manual": no enabled schedule and no max age, so nothing is ever expected.
@@ -82,7 +85,7 @@ def _local_text(dt, tz):
 def next_fire(cron_expression, after, tz):
     """First cron fire time strictly after ``after`` (naive UTC), as naive UTC."""
     try:
-        trigger = CronTrigger.from_crontab(cron_expression, timezone=tz)
+        trigger = cron_trigger(cron_expression, timezone=tz)
         fire = trigger.get_next_fire_time(
             None, after.replace(tzinfo=dt_timezone.utc) + timedelta(microseconds=1)
         )
@@ -104,7 +107,9 @@ def _finished(run):
 
 def evaluate_job(job, runs, now, tz, grace):
     """Health of one job from its relevant ``runs`` (any order)."""
-    runs = sorted(runs, key=_run_key, reverse=True)
+    runs = sorted(
+        (r for r in runs if r.triggered_by != DRY_RUN), key=_run_key, reverse=True
+    )
     schedule = job.schedule
     enabled_schedule = schedule if schedule is not None and schedule.enabled else None
 
@@ -246,6 +251,8 @@ def build_report(jobs, runs_by_job, now, tz, grace):
     week_ago = now - timedelta(days=7)
     for runs in runs_by_job.values():
         for r in runs:
+            if r.triggered_by == DRY_RUN:
+                continue
             if r.started_at and r.started_at >= week_ago:
                 if r.status == "completed":
                     ok += 1
@@ -377,7 +384,9 @@ def load_runs(jobs, now):
     week_ago = now - timedelta(days=7)
     newest_first = (RunHistory.started_at.desc(), RunHistory.id.desc())
     for job in jobs:
-        base = RunHistory.query.filter_by(job_id=job.id)
+        base = RunHistory.query.filter_by(job_id=job.id).filter(
+            RunHistory.triggered_by.is_distinct_from(DRY_RUN)
+        )
         completed = base.filter_by(status="completed").order_by(*newest_first)
         last_ok = completed.first()
         since = base.filter(RunHistory.status.in_(FAILURE_STATUSES))

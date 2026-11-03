@@ -32,10 +32,21 @@ def stream():
                 total_bytes = 0
 
                 for run_id, rclone_jobid in active_runs.items():
+                    if job_runner.is_previewing(run_id):
+                        # A dry run counting deletions: its counters aren't
+                        # progress, so send only the phase.
+                        run_stats[str(run_id)] = {
+                            "phase": "preview",
+                            "stats": None,
+                            "rclone_jobid": rclone_jobid,
+                            "suspects": [],
+                        }
+                        continue
                     stats_group = f"job_{run_id}"
                     try:
                         stats = rclone.get_stats(group=stats_group)
                         run_stats[str(run_id)] = {
+                            "phase": None,
                             "stats": stats,
                             "rclone_jobid": rclone_jobid,
                             "suspects": job_runner.suspects.top(run_id),

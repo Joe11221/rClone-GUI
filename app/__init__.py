@@ -1,4 +1,5 @@
-from datetime import datetime, timezone
+import time
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import Flask
@@ -77,6 +78,10 @@ def _ensure_columns():
         "ALTER TABLE job ADD COLUMN max_age_hours INTEGER",
         "ALTER TABLE job ADD COLUMN health_state VARCHAR(20)",
         "ALTER TABLE job ADD COLUMN health_changed_at DATETIME",
+        "ALTER TABLE job ADD COLUMN preview_deletes BOOLEAN DEFAULT 1",
+        "ALTER TABLE run_history ADD COLUMN phase VARCHAR(10)",
+        "ALTER TABLE run_history ADD COLUMN would_delete INTEGER",
+        "ALTER TABLE run_history ADD COLUMN would_delete_paths TEXT",
     ]
     for sql in migrations:
         try:
@@ -255,8 +260,25 @@ def create_app(config_class=Config):
         # Browsers ask for this path unprompted, e.g. for a tab with no <head> yet.
         return app.send_static_file("favicon.ico")
 
+    rclone_version = {"at": 0.0, "value": None}
+
+    def _rclone_version():
+        """rclone's version, cached: the dashboard is refreshed often."""
+        if rclone_version["value"] and time.monotonic() - rclone_version["at"] < 600:
+            return rclone_version["value"]
+        try:
+            value = (rclone.version().get("version") or "").lstrip("v") or None
+        except Exception:
+            return rclone_version["value"]
+        rclone_version.update(at=time.monotonic(), value=value)
+        return value
+
     @app.route("/")
     def dashboard():
+        from sqlalchemy import func, or_
+
+        from app.services import health as health_service
+
         jobs = Job.query.order_by(Job.name).all()
         active_runs = RunHistory.query.filter_by(status="running").all()
         recent_runs = (
@@ -268,21 +290,72 @@ def create_app(config_class=Config):
             rclone_connected = True
         except Exception:
             pass
-        from app.services import health as health_service
 
         now = datetime.utcnow()
         health_report, _ = health_service.current_report(
             app.config["TIMEZONE"], app.config["HEALTH_GRACE_MINUTES"], now
         )
+        rows = health_service.dashboard_rows(health_report, now, tz)
+
+        # Dry runs move nothing, so no figure below counts them. SQL's != skips
+        # NULL, hence the explicit IS NULL.
+        real = or_(RunHistory.triggered_by.is_(None), RunHistory.triggered_by != "dry_run")
+        # Running runs are added live from the event stream.
+        transferred_24h = (
+            db.session.query(func.coalesce(func.sum(RunHistory.bytes_transferred), 0))
+            .filter(
+                real,
+                RunHistory.status != "running",
+                RunHistory.started_at >= now - timedelta(hours=24),
+            )
+            .scalar()
+        )
+        week = (
+            db.session.query(RunHistory.status, func.count())
+            .filter(real, RunHistory.started_at >= now - timedelta(days=7))
+            .group_by(RunHistory.status)
+            .all()
+        )
+        counts = dict(week)
+        week_ok = counts.get("completed", 0)
+        week_total = week_ok + sum(
+            counts.get(s, 0) for s in health_service.FAILURE_STATUSES
+        )
+
+        # Soonest first. Jobs with no enabled schedule are the manual ones.
+        scheduled = sorted(
+            (r for r in rows if r["entry"].next_run), key=lambda r: r["entry"].next_run
+        )
+        job_by_id = {j.id: j for j in jobs}
+        on_demand = [
+            {"entry": r["entry"], "sync_type": job_by_id[r["entry"].job_id].sync_type}
+            for r in rows
+            if r["entry"].state == "manual"
+        ]
         return render_template(
             "dashboard.html",
             health=health_report,
             verdict=health_service.verdict(health_report, now, tz),
-            rows=health_service.dashboard_rows(health_report, now, tz),
+            rows=rows,
             jobs=jobs,
             active_runs=active_runs,
             recent_runs=recent_runs,
             rclone_connected=rclone_connected,
+            rclone_version=_rclone_version() if rclone_connected else None,
+            transferred_24h=int(transferred_24h or 0),
+            week_ok=week_ok,
+            week_total=week_total,
+            up_next=[
+                {
+                    "entry": r["entry"],
+                    "relative": health_service.time_ago(r["entry"].next_run, now),
+                    "when": r["next_text"],
+                    "title": r["next_title"],
+                }
+                for r in scheduled[:5]
+            ],
+            next_scheduled=scheduled[0] if scheduled else None,
+            on_demand=on_demand,
         )
 
     # Create tables, add any missing columns, and start the scheduler

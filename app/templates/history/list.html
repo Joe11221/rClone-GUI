@@ -109,9 +109,9 @@
                         0
                     {% endif %}
                 </td>
-                <td><span class="badge bg-secondary">{{ run.triggered_by }}</span></td>
+                <td><span class="badge bg-secondary">{{ 'Dry run' if run.is_dry_run else run.triggered_by }}</span></td>
                 <td><div class="d-flex gap-1">
-                    {% if run.status in ['failed', 'interrupted'] and run.job and not run.guard %}
+                    {% if run.status in ['failed', 'interrupted'] and run.job and not run.guard and not run.is_dry_run %}
                     <form method="post" action="{{ url_for('ops.resume_run', run_id=run.id) }}" class="d-inline">
                         <button type="submit" class="btn btn-sm btn-outline-secondary" title="Resume" aria-label="Resume run {{ run.id }} of {{ run.job.name }}">
                             <i class="bi bi-arrow-clockwise"></i>

@@ -292,3 +292,25 @@ def test_job_list_shows_schedule_in_words(app, client, rclone):
     assert "<code" in page and "0 2 * * *" in page
     assert 'aria-label="Start Photos"' in page
     assert "bg-info" not in page and "btn-success" not in page
+
+
+def test_job_form_renders_the_builder_with_a_manual_choice(client, rclone):
+    page = client.get("/jobs/create").get_data(as_text=True)
+    assert "data-cron-builder" in page and 'data-allow-empty="1"' in page
+    assert 'name="schedule_cron"' in page and 'value="manual"' in page
+    assert "js/cronbuilder.js" in page
+
+
+def test_builder_cron_saves_from_the_job_form(app, client, rclone):
+    for cron in ("30 1 * * 1-5", "30 1 * * mon-fri", "*/15 * * * *"):
+        client.post("/jobs/create", data={
+            **JOB_FORM, "name": cron, "schedule_cron": cron, "schedule_enabled": "on",
+        })
+    with app.app_context():
+        assert {s.cron_expression for s in Schedule.query.all()} == {
+            "30 1 * * 1-5", "30 1 * * mon-fri", "*/15 * * * *"}
+
+
+def test_rejected_cron_is_flagged_for_the_builder(client, rclone):
+    page = client.post("/jobs/create", data={**JOB_FORM, "schedule_cron": "every day"}).get_data(as_text=True)
+    assert 'aria-invalid="true"' in page and 'id="schedule_cron-error"' in page

@@ -39,44 +39,154 @@
     {% if verdict.detail %}<p class="verdict-detail mb-0">{{ verdict.detail }}</p>{% endif %}
 </div>
 
-<!-- Active transfers: only visible while something runs -->
-<section data-refresh="active" id="active-section" class="card mb-4{{ '' if active_runs else ' d-none' }}" aria-labelledby="active-heading">
-    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <h2 class="h6 mb-0" id="active-heading"><i class="bi bi-arrow-repeat" aria-hidden="true"></i> Active transfers</h2>
-        <small class="text-body-secondary">
-            <span id="active-count">{{ active_runs|length }}</span> running
-            &middot; <span id="global-speed">--</span>
-            &middot; <span id="global-bytes">--</span> transferred
-        </small>
-    </div>
-    <div class="card-body" id="active-transfers">
-        {% for run in active_runs %}
-        {% set run_name = run.job.name if run.job else 'Unknown job' %}
-        <div class="transfer-item{{ ' mt-3' if not loop.first }}" data-run-id="{{ run.id }}" data-job-name="{{ run_name }}">
-            <div class="d-flex justify-content-between align-items-center gap-2 mb-1">
-                <strong class="text-truncate">{{ run_name }}</strong>
-                <span class="d-flex align-items-center gap-2 flex-shrink-0">
-                    <span class="transfer-speed text-body-secondary text-nowrap">--</span>
-                    <form action="{{ url_for('ops.stop_job', run_id=run.id) }}" method="post"
-                          data-confirm="Stop this run? Files already transferred stay where they are, and the run is recorded as stopped."
-                          data-confirm-label="Stop run">
-                        <button type="submit" class="btn btn-sm btn-outline-danger" aria-label="Stop {{ run_name }}">
-                            <i class="bi bi-stop-fill" aria-hidden="true"></i> Stop
-                        </button>
-                    </form>
-                </span>
+<!-- KPI strip: live cards update from the event stream (dashboard.js) -->
+<div data-refresh="kpis" class="row row-cols-2 row-cols-lg-5 g-2 g-lg-3 mb-4 kpi-strip">
+    <div class="col">
+        <div class="card stat-card h-100">
+            <div class="card-body">
+                <div class="stat-icon"><i class="bi bi-hdd-network" aria-hidden="true"></i></div>
+                <div>
+                    <div class="stat-label">rclone{% if rclone_version %} <span class="text-nowrap">{{ rclone_version }}</span>{% endif %}</div>
+                    {% if rclone_connected %}
+                    <p class="stat-value status-ok"><i class="bi bi-check-lg" aria-hidden="true"></i> Connected</p>
+                    {% else %}
+                    <p class="stat-value status-fail"><i class="bi bi-x-lg" aria-hidden="true"></i> Disconnected</p>
+                    {% endif %}
+                </div>
             </div>
-            <div class="progress" style="height: 20px;">
-                <div class="progress-bar progress-bar-striped progress-bar-animated"
-                     role="progressbar" aria-label="Progress of {{ run_name }}"
-                     aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
-                     style="width: 0%">0%</div>
-            </div>
-            <small class="text-body-secondary transfer-detail">Starting...</small>
         </div>
-        {% endfor %}
     </div>
-</section>
+    <div class="col">
+        <div class="card stat-card h-100">
+            <div class="card-body">
+                <div class="stat-icon"><i class="bi bi-arrow-left-right" aria-hidden="true"></i></div>
+                <div>
+                    <div class="stat-label">Active transfers</div>
+                    <p class="stat-value" id="active-count">{{ active_runs|length }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card stat-card h-100">
+            <div class="card-body">
+                <div class="stat-icon"><i class="bi bi-speedometer2" aria-hidden="true"></i></div>
+                <div>
+                    <div class="stat-label">Speed</div>
+                    <p class="stat-value" id="global-speed">{{ '0 B/s' if active_runs else '--' }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card stat-card h-100">
+            <div class="card-body">
+                <div class="stat-icon"><i class="bi bi-cloud-arrow-up" aria-hidden="true"></i></div>
+                <div>
+                    <div class="stat-label">Transferred, 24h</div>
+                    <p class="stat-value" id="global-bytes" data-base="{{ transferred_24h }}">{{ transferred_24h|fmt_bytes }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col col-12">
+        <div class="card stat-card h-100">
+            <div class="card-body">
+                <div class="stat-icon"><i class="bi bi-check2-circle" aria-hidden="true"></i></div>
+                <div>
+                    <div class="stat-label">Succeeded, 7 days</div>
+                    <p class="stat-value" id="week-success">{% if week_total %}{{ week_ok }} / {{ week_total }}{% else %}--{% endif %}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <!-- Active transfers -->
+    <div class="col-lg-8">
+        <section data-refresh="active" id="active-section" class="card" aria-labelledby="active-heading">
+            <div class="card-header">
+                <h2 class="h6 mb-0" id="active-heading"><i class="bi bi-arrow-repeat" aria-hidden="true"></i> Active transfers</h2>
+            </div>
+            <div class="card-body" id="active-transfers">
+                <p id="active-empty" class="text-body-secondary mb-0{{ ' d-none' if active_runs }}">
+                    Nothing running.
+                    {% if next_scheduled %}Next: {{ next_scheduled.entry.name }} {{ next_scheduled.next_text }}.{% else %}No runs are scheduled.{% endif %}
+                </p>
+                {% for run in active_runs %}
+                {% set run_name = run.job.name if run.job else 'Unknown job' %}
+                {% set counting = run.phase == 'preview' %}
+                <div class="transfer-item{{ ' mt-3' if not loop.first }}{{ ' is-preview' if counting }}" data-run-id="{{ run.id }}" data-job-name="{{ run_name }}">
+                    <div class="d-flex justify-content-between align-items-center gap-2 mb-1">
+                        <strong class="text-truncate">{{ run_name }}</strong>
+                        <span class="d-flex align-items-center gap-2 flex-shrink-0">
+                            <span class="transfer-speed text-body-secondary text-nowrap">{{ '' if counting else '--' }}</span>
+                            <form action="{{ url_for('ops.stop_job', run_id=run.id) }}" method="post"
+                                  data-confirm="Stop this run? Files already transferred stay where they are, and the run is recorded as stopped."
+                                  data-confirm-label="Stop run">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" aria-label="Stop {{ run_name }}">
+                                    <i class="bi bi-stop-fill" aria-hidden="true"></i> Stop
+                                </button>
+                            </form>
+                        </span>
+                    </div>
+                    <div class="progress" style="height: 20px;">
+                        {% if counting %}
+                        <div class="progress-bar progress-bar-striped progress-bar-animated w-100"
+                             role="progressbar" aria-label="Counting deletions for {{ run_name }}"></div>
+                        {% else %}
+                        <div class="progress-bar progress-bar-striped progress-bar-animated"
+                             role="progressbar" aria-label="Progress of {{ run_name }}"
+                             aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+                             style="width: 0%">0%</div>
+                        {% endif %}
+                    </div>
+                    <small class="text-body-secondary transfer-detail">{{ 'Counting deletions' if counting else 'Starting...' }}</small>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+    </div>
+
+    <!-- Next runs, and jobs that only run when asked to -->
+    <div class="col-lg-4">
+        <aside data-refresh="upnext" class="card" aria-label="Up next and quick start">
+            <div class="card-body">
+                <h2 class="h6 section-label mb-2" id="upnext-heading">Up next</h2>
+                {% if up_next %}
+                <ul class="side-list list-unstyled mb-0" aria-labelledby="upnext-heading">
+                    {% for u in up_next %}
+                    <li>
+                        <a href="{{ url_for('jobs.edit_job', job_id=u.entry.job_id) }}" class="text-truncate text-decoration-none">{{ u.entry.name }}</a>
+                        <span class="text-nowrap" title="{{ u.title }}">{{ u.relative }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-body-secondary small mb-0">Nothing is scheduled.</p>
+                {% endif %}
+
+                {% if on_demand %}
+                <h2 class="h6 section-label mt-4 mb-2" id="quick-heading">Quick start</h2>
+                <ul class="side-list list-unstyled mb-0" aria-labelledby="quick-heading">
+                    {% for q in on_demand %}
+                    <li>
+                        <span class="text-truncate">{{ q.entry.name }} <span class="badge bg-secondary">{{ q.sync_type }}</span></span>
+                        <form action="{{ url_for('ops.start_job', job_id=q.entry.job_id) }}" method="post">
+                            <button type="submit" class="btn btn-sm btn-outline-secondary" title="Run {{ q.entry.name }}" aria-label="Run {{ q.entry.name }}"{% if q.entry.running %} disabled{% endif %}>
+                                <i class="bi bi-play-fill" aria-hidden="true"></i> Run
+                            </button>
+                        </form>
+                    </li>
+                    {% endfor %}
+                </ul>
+                <p class="small text-body-secondary mt-2 mb-0">Manual-only jobs. Scheduled jobs have Run in the list below.</p>
+                {% endif %}
+            </div>
+        </aside>
+    </div>
+</div>
 
 <!-- One row per backup, problems first -->
 <section data-refresh="jobs" class="mb-4" aria-labelledby="jobs-heading">
@@ -184,7 +294,7 @@
                                 <span class="text-body-secondary">In progress</span>
                             {% else %}--{% endif %}
                         </td>
-                        <td class="d-none d-lg-table-cell text-body-secondary">{{ (run.triggered_by or '')|replace('_', ' ') }}</td>
+                        <td class="d-none d-lg-table-cell text-body-secondary">{{ 'Dry run' if run.triggered_by == 'dry_run' else (run.triggered_by or '')|replace('_', ' ') }}</td>
                     </tr>
                     {% endfor %}
                     {% if not recent_runs %}
