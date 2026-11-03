@@ -107,9 +107,7 @@ class JobRunner:
             return None
         try:
             stats = self.rclone.get_stats(group=run.stats_group)
-            run.bytes_transferred = stats.get("bytes", 0)
-            run.files_transferred = stats.get("transfers", 0)
-            run.errors = stats.get("errors", 0)
+            self._apply_stats(run, stats)
             return stats
         except Exception as exc:
             logger.warning(
@@ -148,12 +146,39 @@ class JobRunner:
                 self._note_active_transfers(run)
         self.suspects.prune(self._active_runs)
 
+    @staticmethod
+    def _apply_stats(run, stats):
+        """Copy rclone's counters onto the run; returns True if any changed."""
+        values = {
+            "bytes_transferred": stats.get("bytes", 0),
+            "files_transferred": stats.get("transfers", 0),
+            "errors": stats.get("errors", 0),
+        }
+        changed = False
+        for attr, value in values.items():
+            if getattr(run, attr) != value:
+                setattr(run, attr, value)
+                changed = True
+        return changed
+
     def _note_active_transfers(self, run):
         try:
             stats = self.rclone.get_stats(group=run.stats_group)
-            self.suspects.observe_active(run.id, stats.get("transferring"))
         except Exception as exc:
             logger.debug("No live stats for Run #%d: %s", run.id, exc)
+            return
+        self.suspects.observe_active(run.id, stats.get("transferring"))
+        # Snapshot the totals as the run goes. If rclone dies with the server,
+        # nothing can be fetched afterwards and the run would read 0 bytes /
+        # 0 files; the last snapshot is then the best record of what it did.
+        try:
+            if self._apply_stats(run, stats):
+                db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            logger.warning(
+                "Failed to save live stats for Run #%d: %s", run.id, exc
+            )
 
     def check_and_update_runs(self):
         for run_id, rclone_jobid in list(self._active_runs.items()):

@@ -187,6 +187,33 @@ def test_finishing_a_run_captures_late_failures_and_last_error(app, fake_rclone,
         assert RunError.query.one().path == "late.jpg"
 
 
+def test_live_stats_survive_a_crash_that_loses_rclone(app, fake_rclone, run):
+    fake_rclone.get_stats = lambda group=None: {
+        "errors": 29,
+        "bytes": 2_800_000_000,
+        "transfers": 709,
+    }
+    with app.app_context():
+        runner = app.config["JOB_RUNNER"]
+        runner._active_runs[1] = 42
+        runner.collect_active_errors()
+
+        # Server and rclone die: the job can no longer be found or queried.
+        def gone(*args, **kwargs):
+            raise ConnectionError("rclone is down")
+
+        fake_rclone.job_status = gone
+        fake_rclone.get_stats = gone
+        runner._active_runs.clear()
+        runner.restore_active_runs()
+
+        lost = db.session.get(RunHistory, 1)
+        assert lost.status == "failed"
+        assert lost.bytes_transferred == 2_800_000_000
+        assert lost.files_transferred == 709
+        assert lost.errors == 29
+
+
 def test_deleting_a_job_removes_its_failures(app, client, run):
     seed(app, 3)
     client.post("/jobs/1/delete")
