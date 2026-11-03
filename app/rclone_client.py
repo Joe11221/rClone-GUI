@@ -94,6 +94,10 @@ class RcloneClient:
 
     # --- Config / remotes ---
 
+    def noop(self):
+        """Cheap liveness check."""
+        return self._call("rc/noop", timeout=5)
+
     def list_remotes(self):
         return self._call("config/listremotes")
 

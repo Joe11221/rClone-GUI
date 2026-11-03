@@ -2,6 +2,85 @@
 {% block title %}Dashboard - rClone GUI{% endblock %}
 
 {% block content %}
+{% set state_style = {
+    'healthy': ('success', 'bi-check-circle', 'Healthy'),
+    'failing': ('danger', 'bi-x-circle', 'Failing'),
+    'overdue': ('danger', 'bi-clock-history', 'Overdue'),
+    'warning': ('warning', 'bi-exclamation-triangle', 'Warning'),
+    'pending': ('secondary', 'bi-hourglass', 'Pending'),
+} %}
+<!-- Backup health -->
+<div class="card mb-3" id="backup-health">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span><i class="bi bi-heart-pulse"></i> Backup health</span>
+        {% if health.success_rate_7d is not none %}
+        <small class="text-body-secondary">Successful runs, last 7 days: {{ '%.1f' % (health.success_rate_7d * 100) }}%</small>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        <div class="row text-center g-2 mb-3">
+            <div class="col-4">
+                <div class="border rounded py-2">
+                    <div class="fs-3 fw-semibold" id="health-total">{{ health.total }}</div>
+                    <div class="small text-body-secondary">Jobs</div>
+                </div>
+            </div>
+            <div class="col-4">
+                <div class="border rounded py-2">
+                    <div class="fs-3 fw-semibold text-success" id="health-healthy">{{ health.healthy }}</div>
+                    <div class="small text-body-secondary">Healthy</div>
+                </div>
+            </div>
+            <div class="col-4">
+                <div class="border rounded py-2">
+                    <div class="fs-3 fw-semibold {{ 'text-danger' if health.attention else 'text-body-secondary' }}" id="health-attention">{{ health.attention }}</div>
+                    <div class="small text-body-secondary">Need attention</div>
+                </div>
+            </div>
+        </div>
+        {% if health.jobs %}
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>State</th>
+                        <th>Job</th>
+                        <th>Last success</th>
+                        <th>Next run</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for h in health.jobs %}
+                    {% set style = state_style[h.state] %}
+                    <tr data-job-id="{{ h.job_id }}">
+                        <td>
+                            <span class="badge text-bg-{{ style[0] }}"><i class="bi {{ style[1] }}"></i> {{ style[2] }}</span>
+                        </td>
+                        <td>
+                            <a href="{{ url_for('jobs.edit_job', job_id=h.job_id) }}" class="fw-semibold text-decoration-none">{{ h.name }}</a>
+                            {% if h.running %}<span class="badge text-bg-primary ms-1"><i class="bi bi-arrow-repeat"></i> running</span>{% endif %}
+                            <div class="small text-body-secondary">{{ h.source }} &rarr; {{ h.destination }}</div>
+                            <div class="small">{{ h.detail }}{% if h.consecutive_failures > 0 %} <span class="text-body-secondary">&middot; {{ h.consecutive_failures }} failure{{ '' if h.consecutive_failures == 1 else 's' }} in a row</span>{% endif %}</div>
+                        </td>
+                        <td>
+                            {% if h.last_success %}
+                            <span title="{{ h.last_success|local_time }}">{{ h.last_success|time_ago }}</span>
+                            {% else %}<span class="text-body-secondary">never</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if h.next_run %}{{ h.next_run|local_time }}{% else %}<span class="text-body-secondary">--</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-body-secondary mb-0">No jobs yet. Once you create one, its health shows up here.</p>
+        {% endif %}
+    </div>
+</div>
+
 <div class="row">
     <!-- Status Cards -->
     <div class="col-sm-6 col-lg-3 mb-3">

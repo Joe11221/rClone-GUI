@@ -82,6 +82,9 @@ class FakeRclone:
         self.calls.append(("job_stop", jobid))
         return {}
 
+    def noop(self):
+        return {}
+
     def list_remotes(self):
         return {"remotes": ["gdrive", "pcloud"]}
 

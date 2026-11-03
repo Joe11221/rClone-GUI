@@ -41,11 +41,16 @@ class Config:
     # IANA name (e.g. "America/New_York"). Used both for displaying times and
     # for interpreting cron schedules.
     TIMEZONE = os.environ.get("TIMEZONE", "UTC")
+    # Base address for links in notifications, e.g. http://nas.lan:8080
+    PUBLIC_URL = os.environ.get("PUBLIC_URL", "")
     # How late a cron run may start after coming due (e.g. the machine was
     # asleep) before it is skipped. None = no limit.
     SCHEDULE_MISFIRE_GRACE_SECONDS = 3600
     # Run schedules once at startup if they came due while the app was closed.
     SCHEDULE_CATCH_UP = False
+    # How long after a job's expected run time it may still be completing
+    # before it counts as overdue.
+    HEALTH_GRACE_MINUTES = 60
     # True when running as the tray app rather than in Docker.
     DESKTOP_MODE = False
     # Tests turn this off so no scheduler threads are started.

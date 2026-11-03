@@ -30,6 +30,10 @@ class Job(db.Model):
     retry_delay_seconds = db.Column(db.Integer, default=60)
     # Stop a sync after this many deletions at the destination (-1 = no limit).
     max_delete = db.Column(db.Integer, default=1000)
+    # Expect a success at least this often (None = derive it from the schedule).
+    max_age_hours = db.Column(db.Integer, nullable=True)
+    health_state = db.Column(db.String(20), nullable=True)
+    health_changed_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow

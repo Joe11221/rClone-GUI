@@ -156,6 +156,12 @@
                                    value="{{ job.max_delete if job and job.max_delete is not none else 1000 }}" min="-1">
                             <div class="form-text">Stop a sync after deleting this many files at the destination. Protects against a missing or empty source. -1 = no limit.</div>
                         </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="max_age_hours" class="form-label">Must succeed at least every (hours)</label>
+                            <input type="number" class="form-control" id="max_age_hours" name="max_age_hours"
+                                   value="{{ job.max_age_hours if job and job.max_age_hours else '' }}" min="1">
+                            <div class="form-text">Leave blank to expect a successful run after every scheduled time. Set it for jobs without a schedule, or to allow more slack.</div>
+                        </div>
                     </div>
                 </div>
             </div>

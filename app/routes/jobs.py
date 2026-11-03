@@ -87,6 +87,15 @@ def _parse_max_delete(form):
     return value if value >= -1 else 1000
 
 
+def _parse_max_age_hours(form):
+    """Hours a job may go without a success; None if blank, invalid or <= 0."""
+    try:
+        value = int(form.get("max_age_hours", "").strip())
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
 def _parse_bandwidth_rules(form):
     """The job form's bandwidth rules: a list of rule values, None if the form
     didn't include any (leave them alone), or ValueError."""
@@ -133,6 +142,7 @@ def create_job():
             order_by_mixed_window=order_by_mixed_window,
             compare_method=_parse_compare_method(request.form),
             max_delete=_parse_max_delete(request.form),
+            max_age_hours=_parse_max_age_hours(request.form),
             auto_resume="auto_resume" in request.form,
             max_retries=int(request.form.get("max_retries", 3)),
             retry_delay_seconds=int(
@@ -194,6 +204,7 @@ def edit_job(job_id):
         job.order_by_mixed_window = order_by_mixed_window
         job.compare_method = _parse_compare_method(request.form)
         job.max_delete = _parse_max_delete(request.form)
+        job.max_age_hours = _parse_max_age_hours(request.form)
         job.auto_resume = "auto_resume" in request.form
         job.max_retries = int(request.form.get("max_retries", 3))
         job.retry_delay_seconds = int(

@@ -5,3 +5,4 @@ gevent==24.*
 requests==2.32.*
 APScheduler==3.10.*
 tzdata
+apprise==1.*
