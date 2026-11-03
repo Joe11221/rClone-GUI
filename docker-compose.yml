@@ -25,4 +25,7 @@ services:
       # Base URL for links in notifications (also settable in Settings).
       - PUBLIC_URL=${PUBLIC_URL:-}
       - RCLONE_RC_URL=http://127.0.0.1:5572
+    dns:
+      - 1.1.1.1
+      - 192.168.10.1
     restart: unless-stopped
