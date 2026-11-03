@@ -2,8 +2,9 @@ services:
   rclone-gui:
     build: .
     ports:
-      # Published on loopback by default because the app has NO authentication.
-      # Set BIND_ADDRESS=0.0.0.0 in .env only on a network you trust.
+      # Published on loopback by default. Set BIND_ADDRESS=0.0.0.0 in .env to
+      # reach it from other machines (you will be asked to set a password on
+      # first visit; see AUTH_MODE).
       - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-8080}:8080"
     volumes:
       # Persist SQLite database
@@ -13,8 +14,18 @@ services:
       # Mount the data you want to back up or restore (read-write!)
       - ${DATA_PATH:-/mnt/storage}:/mnt/:rw
     environment:
-      - SECRET_KEY=${SECRET_KEY:?Set SECRET_KEY in .env (see .env.example)}
+      # Optional: generated once and kept in ./data when empty.
+      - SECRET_KEY=${SECRET_KEY:-}
+      # password (default) | proxy | none. See .env.example.
+      - AUTH_MODE=${AUTH_MODE:-password}
+      - AUTH_PROXY_HEADER=${AUTH_PROXY_HEADER:-Remote-User}
+      - SECURE_COOKIES=${SECURE_COOKIES:-false}
       - TIMEZONE=${TIMEZONE:-UTC}
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:-}
+      # Base URL for links in notifications (also settable in Settings).
+      - PUBLIC_URL=${PUBLIC_URL:-}
       - RCLONE_RC_URL=http://127.0.0.1:5572
+    dns:
+      - 1.1.1.1
+      - 192.168.10.1
     restart: unless-stopped

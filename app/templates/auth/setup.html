@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Set a password - rClone GUI{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-5">
+    <div class="col-12 col-sm-8 col-md-5 col-lg-4">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-shield-lock"></i> Welcome - set a password</div>
+            <div class="card-body">
+                <p class="text-muted small">
+                    Choose the password that protects this app. You will need it to log in from now on.
+                </p>
+                {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+                <form method="post" action="{{ url_for('auth.setup') }}">
+                    <div class="mb-3">
+                        <label for="password" class="form-label">Password</label>
+                        <input type="password" class="form-control" id="password" name="password"
+                               autocomplete="new-password" minlength="{{ min_length }}" autofocus required>
+                        <div class="form-text">At least {{ min_length }} characters.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="confirm" class="form-label">Confirm password</label>
+                        <input type="password" class="form-control" id="confirm" name="confirm"
+                               autocomplete="new-password" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Set password and continue</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

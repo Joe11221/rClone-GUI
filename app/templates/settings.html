@@ -25,6 +25,37 @@
         </div>
     </div>
 
+    {% if auth_mode == 'password' %}
+    <div class="col-12 mb-3">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-shield-lock"></i> Password</div>
+            <div class="card-body">
+                <form action="{{ url_for('auth.change_password') }}" method="post" class="row g-3">
+                    <div class="col-md-4">
+                        <label for="current_password" class="form-label">Current password</label>
+                        <input type="password" class="form-control" id="current_password" name="current_password"
+                               autocomplete="current-password" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="new_password" class="form-label">New password</label>
+                        <input type="password" class="form-control" id="new_password" name="new_password"
+                               autocomplete="new-password" minlength="8" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="confirm_password" class="form-label">Confirm new password</label>
+                        <input type="password" class="form-control" id="confirm_password" name="confirm_password"
+                               autocomplete="new-password" required>
+                    </div>
+                    <div class="col-12">
+                        <button type="submit" class="btn btn-primary">Change password</button>
+                        <span class="form-text ms-2">Other browsers will be logged out.</span>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <div class="col-12 mb-3">
         <div class="card">
             <div class="card-header"><i class="bi bi-speedometer2"></i> Bandwidth Limits</div>
@@ -52,6 +83,74 @@
                     between everything it is doing, so while jobs run together they all share the lowest limit
                     that applies to any of them.
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 mb-3">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-bell"></i> Notifications</div>
+            <div class="card-body">
+                <form action="{{ url_for('settings.save_notifications') }}" method="post">
+                    <div class="mb-3">
+                        <label for="notify_urls" class="form-label">Notification URLs (one per line)</label>
+                        <textarea class="form-control font-monospace" id="notify_urls" name="notify_urls" rows="4"
+                                  placeholder="ntfy://ntfy.sh/my-backups&#10;discord://webhook_id/webhook_token&#10;tgram://bot_token/chat_id&#10;mailtos://user:pass@gmail.com">{{ notify_urls|join('\n') }}</textarea>
+                        <div class="form-text">
+                            Works with ntfy, Discord, Telegram, email, Gotify, Pushover and 100+ more.
+                            <a href="https://github.com/caronc/apprise/wiki" target="_blank" rel="noopener">URL formats</a>.
+                            These contain secrets, so keep this page private.
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-label">Tell me when</div>
+                        {% for key, label in [
+                            ('failed', 'A backup fails'),
+                            ('held', 'A safety check holds a sync'),
+                            ('skipped', 'A scheduled run is skipped because the last one is still running'),
+                            ('overdue', 'A backup is overdue'),
+                            ('warning', 'A backup has a warning (for example, many files fail)'),
+                            ('recovered', 'A backup recovers'),
+                            ('succeeded', 'Every successful backup'),
+                        ] %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="notify_on" value="{{ key }}"
+                                   id="notify_on_{{ key }}" {% if notify_on[key] %}checked{% endif %}>
+                            <label class="form-check-label" for="notify_on_{{ key }}">{{ label }}</label>
+                        </div>
+                        {% endfor %}
+                        <div class="form-text">“A safety check holds a sync” also covers a sync that deletes unusually many files.</div>
+                    </div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label for="public_url" class="form-label">Link base URL</label>
+                            <input type="url" class="form-control" id="public_url" name="public_url"
+                                   value="{{ public_url }}" placeholder="http://nas.lan:8080">
+                            <div class="form-text">Used for links in messages. Leave blank for no links.</div>
+                        </div>
+                    </div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label for="heartbeat_url" class="form-label">Heartbeat URL</label>
+                            <input type="url" class="form-control" id="heartbeat_url" name="heartbeat_url"
+                                   value="{{ heartbeat_url }}" placeholder="https://hc-ping.com/your-uuid">
+                            <div class="form-text">
+                                Pinged while this app and rclone are running (Healthchecks.io, Uptime Kuma push).
+                                If pings stop, that service alerts you.
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <label for="heartbeat_minutes" class="form-label">Every N minutes</label>
+                            <input type="number" min="1" class="form-control" id="heartbeat_minutes"
+                                   name="heartbeat_minutes" value="{{ heartbeat_minutes }}">
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                    <button type="submit" class="btn btn-outline-secondary ms-2"
+                            formaction="{{ url_for('settings.test_notifications') }}">
+                        <i class="bi bi-send"></i> Send test notification
+                    </button>
+                </form>
             </div>
         </div>
     </div>

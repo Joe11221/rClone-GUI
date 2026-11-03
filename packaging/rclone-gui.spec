@@ -11,6 +11,8 @@ datas = [
 # APScheduler finds its triggers and executors through package metadata.
 datas += copy_metadata("APScheduler")
 datas += collect_data_files("tzdata")
+# Apprise loads its notification plugins dynamically.
+datas += collect_data_files("apprise")
 
 analysis = Analysis(
     ["entry.py"],
@@ -20,6 +22,7 @@ analysis = Analysis(
     hiddenimports=[
         "pystray._win32",
         *collect_submodules("apscheduler"),
+        *collect_submodules("apprise"),
     ],
     # pywebview's own hook collects its WebView2 and .NET files.
     excludes=["gunicorn", "pytest", "tkinter"],

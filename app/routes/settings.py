@@ -24,9 +24,17 @@ def index():
     global_rules = (
         BandwidthRule.query.filter_by(job_id=None).order_by(BandwidthRule.id).all()
     )
+    from app.services import notifier
+
     limit = current_app.config["BANDWIDTH"].current()
+    hb_url, hb_minutes = notifier.get_heartbeat()
     return render_template(
         "settings.html",
+        notify_urls=notifier.get_urls(),
+        notify_on=notifier.get_notify_on(),
+        public_url=notifier.get_public_url(current_app),
+        heartbeat_url=hb_url,
+        heartbeat_minutes=hb_minutes,
         remotes=remotes,
         rclone_connected=rclone_connected,
         bandwidth_rules=[bandwidth.rule_to_dict(r) for r in global_rules],
@@ -50,6 +58,100 @@ def save_bandwidth():
         f"Bandwidth limits saved ({len(rules)} rule{'s' if len(rules) != 1 else ''}).",
         "success",
     )
+    return redirect(url_for("settings.index"))
+
+
+# --- Notifications ---
+
+
+def _notification_form():
+    """Parse the form; returns (urls, rejected line numbers, values or None)."""
+    import apprise
+
+    urls, rejected = [], []
+    probe = apprise.Apprise()
+    for number, line in enumerate(
+        (request.form.get("notify_urls") or "").splitlines(), start=1
+    ):
+        line = line.strip()
+        if not line:
+            continue
+        if probe.add(line):
+            urls.append(line)
+        else:
+            rejected.append(number)
+    return urls, rejected
+
+
+@settings_bp.route("/notifications", methods=["POST"])
+def save_notifications():
+    from app.services.app_settings import set_setting
+    from app.services.notifier import DEFAULT_NOTIFY_ON
+
+    urls, rejected = _notification_form()
+    if rejected:
+        flash(
+            "Not saved. Could not understand notification URL on line "
+            + ", ".join(str(n) for n in rejected)
+            + ".",
+            "danger",
+        )
+        return redirect(url_for("settings.index"))
+
+    heartbeat_url = (request.form.get("heartbeat_url") or "").strip()
+    if heartbeat_url and not heartbeat_url.lower().startswith(("http://", "https://")):
+        flash("Not saved. The heartbeat URL must start with http:// or https://.", "danger")
+        return redirect(url_for("settings.index"))
+    try:
+        minutes = max(1, int(request.form.get("heartbeat_minutes") or 5))
+    except ValueError:
+        flash("Not saved. Heartbeat minutes must be a whole number.", "danger")
+        return redirect(url_for("settings.index"))
+
+    public_url = (request.form.get("public_url") or "").strip().rstrip("/")
+    if public_url and not public_url.lower().startswith(("http://", "https://")):
+        flash("Not saved. The link base URL must start with http:// or https://.", "danger")
+        return redirect(url_for("settings.index"))
+
+    set_setting("notify_urls", urls)
+    set_setting(
+        "notify_on",
+        {key: key in request.form.getlist("notify_on") for key in DEFAULT_NOTIFY_ON},
+    )
+    set_setting("public_url", public_url)
+    set_setting("heartbeat_url", heartbeat_url)
+    set_setting("heartbeat_minutes", minutes)
+    flash("Notification settings saved.", "success")
+    return redirect(url_for("settings.index"))
+
+
+@settings_bp.route("/notifications/test", methods=["POST"])
+def test_notifications():
+    urls, rejected = _notification_form()
+    if rejected:
+        flash(
+            "Could not understand notification URL on line "
+            + ", ".join(str(n) for n in rejected)
+            + ".",
+            "danger",
+        )
+        return redirect(url_for("settings.index"))
+    if not urls:
+        from app.services.notifier import get_urls
+
+        urls = get_urls()
+    if not urls:
+        flash("Add at least one notification URL first.", "warning")
+        return redirect(url_for("settings.index"))
+    try:
+        ok = current_app.config["NOTIFIER"].send_test(urls)
+    except Exception:
+        current_app.logger.exception("Test notification failed")
+        ok = False
+    if ok:
+        flash("Test notification sent.", "success")
+    else:
+        flash("The test notification could not be delivered. Check the URLs and the log.", "danger")
     return redirect(url_for("settings.index"))
 
 

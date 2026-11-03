@@ -12,7 +12,14 @@
     <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
     <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
 </head>
-<body>
+<body{% if public_page %} data-public="1"{% endif %}>
+    {% if public_page %}
+    <nav class="navbar border-bottom">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0"><i class="bi bi-cloud-arrow-up"></i> rClone GUI</span>
+        </div>
+    </nav>
+    {% else %}
     <nav class="navbar navbar-expand-lg border-bottom">
         <div class="container-fluid">
             <a class="navbar-brand" href="{{ url_for('dashboard') }}">
@@ -71,9 +78,35 @@
                 <span class="navbar-text" id="connection-status">
                     <i class="bi bi-circle-fill text-secondary"></i> Connecting...
                 </span>
+                {% if show_logout %}
+                <form action="{{ url_for('auth.logout') }}" method="post" class="ms-3">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-box-arrow-right"></i> Log out
+                    </button>
+                </form>
+                {% endif %}
             </div>
         </div>
     </nav>
+    {% endif %}
+
+    {% if show_auth_warning %}
+    <div class="alert alert-warning alert-dismissible rounded-0 mb-0" role="alert" id="auth-warning">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        Login is turned off (AUTH_MODE=none). Anyone who can reach this page can control your backups.
+        <button type="button" class="btn-close" id="auth-warning-close" aria-label="Dismiss"></button>
+    </div>
+    <script>
+        (function () {
+            var banner = document.getElementById('auth-warning');
+            if (sessionStorage.getItem('authWarningDismissed')) { banner.remove(); return; }
+            document.getElementById('auth-warning-close').addEventListener('click', function () {
+                sessionStorage.setItem('authWarningDismissed', '1');
+                banner.remove();
+            });
+        })();
+    </script>
+    {% endif %}
 
     <div class="container-fluid mt-3">
         {% with messages = get_flashed_messages(with_categories=true) %}

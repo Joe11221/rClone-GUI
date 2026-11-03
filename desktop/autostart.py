@@ -17,7 +17,7 @@ def is_enabled(value_name=paths.APP_NAME):
 
 def enable(value_name=paths.APP_NAME):
     command = subprocess.list2cmdline(paths.app_command("--background"))
-    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+    with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, _RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
         winreg.SetValueEx(key, value_name, 0, winreg.REG_SZ, command)
 
 

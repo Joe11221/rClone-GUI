@@ -1,13 +1,15 @@
-from datetime import timezone
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import Flask
 
+from app.auth import init_auth, load_or_create_secret_key
 from app.config import Config
 from app.extensions import db
 from app.rclone_client import RcloneClient
 from app.security import init_request_guards
 from app.services.bandwidth import BandwidthController, migrate_legacy_limits
+from app.services.events import EventBus
 from app.services.job_runner import JobRunner
 from app.services.scheduler_service import SchedulerService
 
@@ -23,11 +25,16 @@ _INSECURE_SECRET_KEYS = {
 
 
 def _require_secret_key(app):
-    if app.config.get("SECRET_KEY") in _INSECURE_SECRET_KEYS:
+    key = app.config.get("SECRET_KEY") or ""
+    if key == "":
+        # Not set: make one once and keep it, so sessions survive restarts.
+        app.config["SECRET_KEY"] = load_or_create_secret_key(app.instance_path)
+    elif key in _INSECURE_SECRET_KEYS:
         raise RuntimeError(
-            "SECRET_KEY is not set (or is a placeholder). Generate one with "
-            "`python -c \"import secrets; print(secrets.token_hex(32))\"` "
-            "and set it in your .env file."
+            "SECRET_KEY is set to a placeholder value. Remove it from your .env "
+            "file to have one generated automatically, or set it to a long "
+            "random string: "
+            "`python -c \"import secrets; print(secrets.token_hex(32))\"`."
         )
 
 
@@ -62,6 +69,14 @@ def _ensure_columns():
         "ALTER TABLE run_history ADD COLUMN retry_of_run_id INTEGER",
         "ALTER TABLE run_history ADD COLUMN retry_count INTEGER DEFAULT 0",
         "ALTER TABLE schedule ADD COLUMN catch_up_after DATETIME",
+        "ALTER TABLE job ADD COLUMN max_delete INTEGER DEFAULT 1000",
+        "ALTER TABLE run_history ADD COLUMN deletes INTEGER DEFAULT 0",
+        "ALTER TABLE run_history ADD COLUMN checks INTEGER DEFAULT 0",
+        "ALTER TABLE run_history ADD COLUMN config_snapshot TEXT",
+        "ALTER TABLE run_history ADD COLUMN guard VARCHAR(30)",
+        "ALTER TABLE job ADD COLUMN max_age_hours INTEGER",
+        "ALTER TABLE job ADD COLUMN health_state VARCHAR(20)",
+        "ALTER TABLE job ADD COLUMN health_changed_at DATETIME",
     ]
     for sql in migrations:
         try:
@@ -72,12 +87,14 @@ def _ensure_columns():
 
 
 def create_app(config_class=Config):
-    app = Flask(__name__)
+    # INSTANCE_PATH lets tests (and unusual installs) relocate the instance folder.
+    app = Flask(__name__, instance_path=getattr(config_class, "INSTANCE_PATH", None))
     app.config.from_object(config_class)
     _require_secret_key(app)
     tz = _load_timezone(app.config["TIMEZONE"])
 
     init_request_guards(app)
+    init_auth(app)
 
     # Initialize extensions
     db.init_app(app)
@@ -94,8 +111,12 @@ def create_app(config_class=Config):
     bandwidth = BandwidthController(rclone, tz)
     app.config["BANDWIDTH"] = bandwidth
 
+    # Runner and health checks announce what happened; notifiers listen
+    events = EventBus()
+    app.config["EVENTS"] = events
+
     # Initialize job runner
-    job_runner = JobRunner(rclone, bandwidth=bandwidth)
+    job_runner = JobRunner(rclone, bandwidth=bandwidth, events=events)
     app.config["JOB_RUNNER"] = job_runner
 
     # Initialize scheduler
@@ -120,16 +141,36 @@ def create_app(config_class=Config):
         with app.app_context():
             job_runner.collect_active_errors()
 
+    def _check_health():
+        from app.services.health import evaluate_and_record
+
+        with app.app_context():
+            evaluate_and_record(app, app.config["EVENTS"])
+
     monitor.add_job(_check_runs, "interval", seconds=10)
+    monitor.add_job(
+        _check_health, "interval", seconds=60, max_instances=1, coalesce=True
+    )
     # rclone only remembers its last ~100 completed transfers, so failures
     # must be picked up quickly. Overlap is harmless: entries are de-duplicated.
     monitor.add_job(
         _collect_errors, "interval", seconds=3, max_instances=1, coalesce=True
     )
+    from app.services.notifier import Notifier
+
+    notifier = Notifier(app)
+    events.subscribe(notifier)
+    app.config["NOTIFIER"] = notifier
+
+    # Dead-man's switch: only pings while rclone answers
+    monitor.add_job(
+        notifier.heartbeat_tick, "interval", seconds=60, max_instances=1, coalesce=True
+    )
     if app.config["BACKGROUND_TASKS_ENABLED"]:
         monitor.start()
 
     # Register blueprints
+    from app.routes.health import health_bp
     from app.routes.history import history_bp
     from app.routes.jobs import jobs_bp
     from app.routes.operations import ops_bp
@@ -144,6 +185,7 @@ def create_app(config_class=Config):
     app.register_blueprint(history_bp, url_prefix="/history")
     app.register_blueprint(run_errors_bp, url_prefix="/runs")
     app.register_blueprint(sse_bp)
+    app.register_blueprint(health_bp)
     app.register_blueprint(settings_bp, url_prefix="/settings")
 
     @app.context_processor
@@ -184,6 +226,13 @@ def create_app(config_class=Config):
             return f"{minutes}m {seconds}s"
         return f"{seconds}s"
 
+    @app.template_filter("time_ago")
+    def time_ago_filter(dt):
+        """'5 minutes ago' / 'in 3 hours' for a naive-UTC datetime."""
+        from app.services.health import time_ago
+
+        return time_ago(dt, datetime.utcnow()) if dt else "never"
+
     @app.template_filter("fmt_bytes")
     def fmt_bytes_filter(b):
         """Format bytes as a human-readable string (e.g. '1.2 GB')."""
@@ -219,8 +268,14 @@ def create_app(config_class=Config):
             rclone_connected = True
         except Exception:
             pass
+        from app.services.health import current_report
+
+        health_report, _ = current_report(
+            app.config["TIMEZONE"], app.config["HEALTH_GRACE_MINUTES"]
+        )
         return render_template(
             "dashboard.html",
+            health=health_report,
             jobs=jobs,
             active_runs=active_runs,
             recent_runs=recent_runs,

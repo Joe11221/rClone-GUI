@@ -1,8 +1,10 @@
 import os
+from datetime import timedelta
 
 
 class Config:
-    # No default on purpose: create_app() refuses to start without a real key.
+    # Empty = create_app() generates one and keeps it in the instance folder.
+    # Placeholder values are refused.
     SECRET_KEY = os.environ.get("SECRET_KEY", "")
     SQLALCHEMY_DATABASE_URI = os.environ.get(
         "DATABASE_URL", "sqlite:///rclone_gui.db"
@@ -11,6 +13,20 @@ class Config:
     # Localhost cookies are shared across ports, so the name must be our own.
     SESSION_COOKIE_NAME = "rclone_gui_session"
     SESSION_COOKIE_SAMESITE = "Lax"
+    # Browser sessions last 30 days after logging in.
+    PERMANENT_SESSION_LIFETIME = timedelta(days=30)
+    SESSION_COOKIE_HTTPONLY = True
+    # Leave off for plain-http LAN use; turn on when served over https.
+    SESSION_COOKIE_SECURE = os.environ.get("SECURE_COOKIES", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+    # "password" (single-user login), "proxy" (a reverse proxy logs users in and
+    # sends AUTH_PROXY_HEADER) or "none" (no login at all).
+    AUTH_MODE = os.environ.get("AUTH_MODE", "password").strip().lower() or "password"
+    AUTH_PROXY_HEADER = os.environ.get("AUTH_PROXY_HEADER", "Remote-User").strip()
     # Host headers to accept, e.g. "nas.lan:8080,127.0.0.1:8080". Empty = any.
     ALLOWED_HOSTS = [
         host.strip()
@@ -25,11 +41,16 @@ class Config:
     # IANA name (e.g. "America/New_York"). Used both for displaying times and
     # for interpreting cron schedules.
     TIMEZONE = os.environ.get("TIMEZONE", "UTC")
+    # Base address for links in notifications, e.g. http://nas.lan:8080
+    PUBLIC_URL = os.environ.get("PUBLIC_URL", "")
     # How late a cron run may start after coming due (e.g. the machine was
     # asleep) before it is skipped. None = no limit.
     SCHEDULE_MISFIRE_GRACE_SECONDS = 3600
     # Run schedules once at startup if they came due while the app was closed.
     SCHEDULE_CATCH_UP = False
+    # How long after a job's expected run time it may still be completing
+    # before it counts as overdue.
+    HEALTH_GRACE_MINUTES = 60
     # True when running as the tray app rather than in Docker.
     DESKTOP_MODE = False
     # Tests turn this off so no scheduler threads are started.

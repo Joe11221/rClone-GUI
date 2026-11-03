@@ -8,10 +8,19 @@
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h4><i class="bi bi-journal-text"></i> Run #{{ run.id }}</h4>
             <div class="d-flex gap-2">
-                {% if run.status in ['failed', 'interrupted'] and run.job %}
+                {% if run.status in ['failed', 'interrupted'] and run.job and not run.guard %}
                 <form method="post" action="{{ url_for('ops.resume_run', run_id=run.id) }}">
                     <button type="submit" class="btn btn-outline-primary">
                         <i class="bi bi-arrow-clockwise"></i> Resume
+                    </button>
+                </form>
+                {% endif %}
+                {% if run.guard and run.status in ['held', 'failed'] and run.job %}
+                <form method="post" action="{{ url_for('ops.start_job', job_id=run.job_id) }}"
+                      data-confirm="This run will skip the safety checks and may delete files at the destination. Continue?" data-confirm-label="Run anyway">
+                    <input type="hidden" name="override" value="1">
+                    <button type="submit" class="btn btn-outline-warning">
+                        <i class="bi bi-shield-slash"></i> Run anyway
                     </button>
                 </form>
                 {% endif %}
@@ -43,6 +52,10 @@
                                         <span class="badge bg-warning text-dark">Stopped</span>
                                     {% elif run.status == 'interrupted' %}
                                         <span class="badge bg-info">Interrupted</span>
+                                    {% elif run.status == 'held' %}
+                                        <span class="badge bg-warning text-dark"><i class="bi bi-shield-exclamation"></i> Held</span>
+                                    {% elif run.status == 'skipped' %}
+                                        <span class="badge bg-secondary"><i class="bi bi-skip-forward"></i> Skipped</span>
                                     {% endif %}
                                     {% if run.retry_count > 0 %}
                                         <span class="badge bg-secondary ms-1">Retry #{{ run.retry_count }}</span>
@@ -96,6 +109,21 @@
                 </div>
             </div>
         </div>
+
+        {% set snapshot = run.get_config_snapshot() %}
+        {% if snapshot %}
+        <details class="card mb-3">
+            <summary class="card-header">Settings used for this run</summary>
+            <div class="card-body">
+                <table class="table table-borderless table-sm mb-2">
+                    <tr><td class="text-muted">Source</td><td><code>{{ snapshot.source }}</code></td></tr>
+                    <tr><td class="text-muted">Destination</td><td><code>{{ snapshot.destination }}</code></td></tr>
+                    <tr><td class="text-muted">Type</td><td>{{ snapshot.sync_type }}</td></tr>
+                </table>
+                <pre class="mb-0 small">{{ {'config': snapshot.config, 'filter': snapshot.filter}|tojson(indent=2) }}</pre>
+            </div>
+        </details>
+        {% endif %}
 
         <div class="card mb-3">
             <div class="card-header">Transfer Stats</div>

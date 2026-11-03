@@ -16,9 +16,9 @@ def _config(**overrides):
 
 
 @pytest.mark.parametrize(
-    "key", ["", "change-me", "change-me-in-production", "dev-secret-key-change-me"]
+    "key", ["change-me", "change-me-in-production", "dev-secret-key-change-me"]
 )
-def test_refuses_to_start_without_real_secret_key(key):
+def test_refuses_placeholder_secret_key(key):
     with pytest.raises(RuntimeError, match="SECRET_KEY"):
         create_app(_config(SECRET_KEY=key))
 
