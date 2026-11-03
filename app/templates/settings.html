@@ -25,6 +25,37 @@
         </div>
     </div>
 
+    {% if auth_mode == 'password' %}
+    <div class="col-12 mb-3">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-shield-lock"></i> Password</div>
+            <div class="card-body">
+                <form action="{{ url_for('auth.change_password') }}" method="post" class="row g-3">
+                    <div class="col-md-4">
+                        <label for="current_password" class="form-label">Current password</label>
+                        <input type="password" class="form-control" id="current_password" name="current_password"
+                               autocomplete="current-password" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="new_password" class="form-label">New password</label>
+                        <input type="password" class="form-control" id="new_password" name="new_password"
+                               autocomplete="new-password" minlength="8" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="confirm_password" class="form-label">Confirm new password</label>
+                        <input type="password" class="form-control" id="confirm_password" name="confirm_password"
+                               autocomplete="new-password" required>
+                    </div>
+                    <div class="col-12">
+                        <button type="submit" class="btn btn-primary">Change password</button>
+                        <span class="form-text ms-2">Other browsers will be logged out.</span>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <div class="col-12 mb-3">
         <div class="card">
             <div class="card-header"><i class="bi bi-speedometer2"></i> Bandwidth Limits</div>

@@ -42,6 +42,9 @@ def make_config(user_settings, rclone, port):
         SCHEDULE_MISFIRE_GRACE_SECONDS = None
         SCHEDULE_CATCH_UP = True
         DESKTOP_MODE = True
+        # Loopback-only and single-user, so no login by default. Add
+        # "auth_mode": "password" to settings.json to require one.
+        AUTH_MODE = user_settings.get("auth_mode") or "none"
 
     return DesktopConfig
 

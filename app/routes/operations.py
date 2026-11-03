@@ -32,12 +32,20 @@ def running():
 def start_job(job_id):
     job = Job.query.get_or_404(job_id)
     runner = current_app.config["JOB_RUNNER"]
+    override = request.form.get("override") == "1"
     try:
-        run = runner.start_job(job, triggered_by="manual")
-        flash(
-            f"Job '{job.name}' started (rclone job #{run.rclone_jobid}).",
-            "success",
+        run = runner.start_job(
+            job,
+            triggered_by="manual_override" if override else "manual",
+            allow_deletes=override,
         )
+        if run.status == "held":
+            flash(f"Job '{job.name}' was not started. {run.error_message}", "warning")
+        else:
+            flash(
+                f"Job '{job.name}' started (rclone job #{run.rclone_jobid}).",
+                "success",
+            )
     except Exception as e:
         flash(f"Failed to start job: {e}", "danger")
     return redirect(url_for("ops.running"))
@@ -59,6 +67,10 @@ def resume_run(run_id):
         flash("Only failed or interrupted runs can be resumed.", "warning")
         return redirect(url_for("history.detail", run_id=run_id))
 
+    if run.guard:
+        flash("A safety check stopped this run; use Run anyway instead.", "warning")
+        return redirect(url_for("history.detail", run_id=run_id))
+
     job = run.job
     if not job:
         flash("Cannot resume: job has been deleted.", "danger")
@@ -66,6 +78,9 @@ def resume_run(run_id):
 
     runner = current_app.config["JOB_RUNNER"]
     new_run = runner._resume_run(run, reason="manual_resume")
+    if new_run and new_run.status == "held":
+        flash(f"Job '{job.name}' was not resumed. {new_run.error_message}", "warning")
+        return redirect(url_for("history.detail", run_id=new_run.id))
     if new_run:
         flash(f"Job '{job.name}' resumed as Run #{new_run.id}.", "success")
         return redirect(url_for("ops.running"))

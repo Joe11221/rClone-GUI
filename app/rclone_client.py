@@ -147,6 +147,18 @@ class RcloneClient:
             {"fs": fs, "remote": remote, "opt": {"recurse": recurse}},
         )
 
+    def list_top(self, fs, timeout=120):
+        """Entries directly inside ``fs``; raises if it can't be read.
+
+        Generous timeout: a bucket with no folders lists every object here.
+        """
+        reply = self._call(
+            "operations/list",
+            {"fs": fs, "remote": "", "opt": {"recurse": False}},
+            timeout=timeout,
+        )
+        return reply.get("list") or []
+
     def list_dirs(self, fs, remote="", timeout=None):
         return self._call(
             "operations/list",

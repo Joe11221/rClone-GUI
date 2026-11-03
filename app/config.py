@@ -1,8 +1,10 @@
 import os
+from datetime import timedelta
 
 
 class Config:
-    # No default on purpose: create_app() refuses to start without a real key.
+    # Empty = create_app() generates one and keeps it in the instance folder.
+    # Placeholder values are refused.
     SECRET_KEY = os.environ.get("SECRET_KEY", "")
     SQLALCHEMY_DATABASE_URI = os.environ.get(
         "DATABASE_URL", "sqlite:///rclone_gui.db"
@@ -11,6 +13,20 @@ class Config:
     # Localhost cookies are shared across ports, so the name must be our own.
     SESSION_COOKIE_NAME = "rclone_gui_session"
     SESSION_COOKIE_SAMESITE = "Lax"
+    # Browser sessions last 30 days after logging in.
+    PERMANENT_SESSION_LIFETIME = timedelta(days=30)
+    SESSION_COOKIE_HTTPONLY = True
+    # Leave off for plain-http LAN use; turn on when served over https.
+    SESSION_COOKIE_SECURE = os.environ.get("SECURE_COOKIES", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+    # "password" (single-user login), "proxy" (a reverse proxy logs users in and
+    # sends AUTH_PROXY_HEADER) or "none" (no login at all).
+    AUTH_MODE = os.environ.get("AUTH_MODE", "password").strip().lower() or "password"
+    AUTH_PROXY_HEADER = os.environ.get("AUTH_PROXY_HEADER", "Remote-User").strip()
     # Host headers to accept, e.g. "nas.lan:8080,127.0.0.1:8080". Empty = any.
     ALLOWED_HOSTS = [
         host.strip()

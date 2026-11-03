@@ -36,6 +36,10 @@
                         <span class="badge bg-warning text-dark"><i class="bi bi-stop-fill"></i> Stopped</span>
                     {% elif run.status == 'interrupted' %}
                         <span class="badge bg-info"><i class="bi bi-pause-circle"></i> Interrupted</span>
+                    {% elif run.status == 'held' %}
+                        <span class="badge bg-warning text-dark"><i class="bi bi-shield-exclamation"></i> Held</span>
+                    {% elif run.status == 'skipped' %}
+                        <span class="badge bg-secondary"><i class="bi bi-skip-forward"></i> Skipped</span>
                     {% endif %}
                     {% if run.retry_count > 0 %}
                         <small class="text-muted">(retry #{{ run.retry_count }})</small>
@@ -72,10 +76,19 @@
                     <a href="{{ url_for('history.detail', run_id=run.id) }}" class="btn btn-sm btn-outline-secondary">
                         <i class="bi bi-eye"></i>
                     </a>
-                    {% if run.status in ['failed', 'interrupted'] and run.job %}
+                    {% if run.status in ['failed', 'interrupted'] and run.job and not run.guard %}
                     <form method="post" action="{{ url_for('ops.resume_run', run_id=run.id) }}" class="d-inline">
                         <button type="submit" class="btn btn-sm btn-outline-primary" title="Resume">
                             <i class="bi bi-arrow-clockwise"></i>
+                        </button>
+                    </form>
+                    {% endif %}
+                    {% if run.guard and run.status in ['held', 'failed'] and run.job %}
+                    <form method="post" action="{{ url_for('ops.start_job', job_id=run.job_id) }}" class="d-inline"
+                          data-confirm="This run will skip the safety checks and may delete files at the destination. Continue?" data-confirm-label="Run anyway">
+                        <input type="hidden" name="override" value="1">
+                        <button type="submit" class="btn btn-sm btn-outline-warning" title="Run anyway">
+                            <i class="bi bi-shield-slash"></i>
                         </button>
                     </form>
                     {% endif %}

@@ -28,6 +28,8 @@ class Job(db.Model):
     auto_resume = db.Column(db.Boolean, default=False)
     max_retries = db.Column(db.Integer, default=3)
     retry_delay_seconds = db.Column(db.Integer, default=60)
+    # Stop a sync after this many deletions at the destination (-1 = no limit).
+    max_delete = db.Column(db.Integer, default=1000)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -79,6 +81,14 @@ class Job(db.Model):
             config["CheckSum"] = True
         elif self.compare_method == "ignore_existing":
             config["IgnoreExisting"] = True
+        # A missing source makes a sync delete the whole destination; this caps
+        # the damage. Before extra flags so an explicit flag still wins.
+        if (
+            self.sync_type == "sync"
+            and self.max_delete is not None
+            and self.max_delete >= 0
+        ):
+            config["MaxDelete"] = self.max_delete
         config.update(self.get_extra_flags())
         return config
 
@@ -155,6 +165,22 @@ class RunHistory(db.Model):
         db.Integer, db.ForeignKey("run_history.id"), nullable=True
     )
     retry_count = db.Column(db.Integer, default=0)
+    deletes = db.Column(db.Integer, default=0)
+    checks = db.Column(db.Integer, default=0)
+    # JSON of what was dispatched to rclone, so the run can be explained later
+    # even after the job is edited.
+    config_snapshot = db.Column(db.Text, nullable=True)
+    # Safety check that stopped the run: source_empty | source_unreachable |
+    # delete_limit.
+    guard = db.Column(db.String(30), nullable=True)
+
+    def get_config_snapshot(self):
+        if not self.config_snapshot:
+            return None
+        try:
+            return json.loads(self.config_snapshot)
+        except ValueError:
+            return None
 
     retry_of = db.relationship(
         "RunHistory", remote_side="RunHistory.id", uselist=False

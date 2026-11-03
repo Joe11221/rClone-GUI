@@ -157,6 +157,10 @@
                                     <span class="badge bg-warning text-dark"><i class="bi bi-stop-fill"></i> Stopped</span>
                                 {% elif run.status == 'interrupted' %}
                                     <span class="badge bg-info"><i class="bi bi-pause-circle"></i> Interrupted</span>
+                                {% elif run.status == 'held' %}
+                                    <span class="badge bg-warning text-dark"><i class="bi bi-shield-exclamation"></i> Held</span>
+                                {% elif run.status == 'skipped' %}
+                                    <span class="badge bg-secondary"><i class="bi bi-skip-forward"></i> Skipped</span>
                                 {% endif %}
                             </td>
                             <td>{{ run.started_at|local_time }}</td>

@@ -111,7 +111,9 @@ def test_scheduled_run_records_baseline_and_skips_overlap(app, client, fake_rclo
 
     assert len(fake_rclone.calls) == 1
     with app.app_context():
-        assert RunHistory.query.count() == 1
+        # The overlap leaves a "skipped" row but never a second rclone job.
+        assert RunHistory.query.filter_by(status="running").count() == 1
+        assert RunHistory.query.filter_by(status="skipped").count() == 1
         assert Schedule.query.one().catch_up_after is not None
 
 

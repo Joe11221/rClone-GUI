@@ -100,6 +100,38 @@ class SchedulerService:
                     self.job_runner.start_job(job, triggered_by="schedule")
                 except JobAlreadyRunning as exc:
                     logger.info("Skipping scheduled run: %s", exc)
+                    self._record_skipped(job, exc.existing_run_id)
+
+    def _record_skipped(self, job, existing_run_id):
+        """Leave a visible trace when a run came due while the last one ran."""
+        from app.extensions import db
+        from app.models import RunHistory
+
+        now = datetime.utcnow()
+        reason = (
+            f"Skipped: Run #{existing_run_id} was still running."
+            if existing_run_id
+            else "Skipped: the job was still running."
+        )
+        run = RunHistory(
+            job_id=job.id,
+            triggered_by="schedule",
+            status="skipped",
+            started_at=now,
+            finished_at=now,
+            error_message=reason,
+        )
+        db.session.add(run)
+        db.session.commit()
+        events = self.job_runner.events
+        if events:
+            events.emit(
+                "run_skipped",
+                run_id=run.id,
+                job_id=job.id,
+                job_name=job.name,
+                reason=reason,
+            )
 
     def get_next_run(self, schedule_id):
         job_id = f"schedule_{schedule_id}"

@@ -3,6 +3,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import Flask
 
+from app.auth import init_auth, load_or_create_secret_key
 from app.config import Config
 from app.extensions import db
 from app.rclone_client import RcloneClient
@@ -24,11 +25,16 @@ _INSECURE_SECRET_KEYS = {
 
 
 def _require_secret_key(app):
-    if app.config.get("SECRET_KEY") in _INSECURE_SECRET_KEYS:
+    key = app.config.get("SECRET_KEY") or ""
+    if key == "":
+        # Not set: make one once and keep it, so sessions survive restarts.
+        app.config["SECRET_KEY"] = load_or_create_secret_key(app.instance_path)
+    elif key in _INSECURE_SECRET_KEYS:
         raise RuntimeError(
-            "SECRET_KEY is not set (or is a placeholder). Generate one with "
-            "`python -c \"import secrets; print(secrets.token_hex(32))\"` "
-            "and set it in your .env file."
+            "SECRET_KEY is set to a placeholder value. Remove it from your .env "
+            "file to have one generated automatically, or set it to a long "
+            "random string: "
+            "`python -c \"import secrets; print(secrets.token_hex(32))\"`."
         )
 
 
@@ -63,6 +69,11 @@ def _ensure_columns():
         "ALTER TABLE run_history ADD COLUMN retry_of_run_id INTEGER",
         "ALTER TABLE run_history ADD COLUMN retry_count INTEGER DEFAULT 0",
         "ALTER TABLE schedule ADD COLUMN catch_up_after DATETIME",
+        "ALTER TABLE job ADD COLUMN max_delete INTEGER DEFAULT 1000",
+        "ALTER TABLE run_history ADD COLUMN deletes INTEGER DEFAULT 0",
+        "ALTER TABLE run_history ADD COLUMN checks INTEGER DEFAULT 0",
+        "ALTER TABLE run_history ADD COLUMN config_snapshot TEXT",
+        "ALTER TABLE run_history ADD COLUMN guard VARCHAR(30)",
     ]
     for sql in migrations:
         try:
@@ -73,12 +84,14 @@ def _ensure_columns():
 
 
 def create_app(config_class=Config):
-    app = Flask(__name__)
+    # INSTANCE_PATH lets tests (and unusual installs) relocate the instance folder.
+    app = Flask(__name__, instance_path=getattr(config_class, "INSTANCE_PATH", None))
     app.config.from_object(config_class)
     _require_secret_key(app)
     tz = _load_timezone(app.config["TIMEZONE"])
 
     init_request_guards(app)
+    init_auth(app)
 
     # Initialize extensions
     db.init_app(app)

@@ -2,6 +2,15 @@
 let evtSource = null;
 let lastData = null;
 
+// An expired login answers fetches with 401: reload so the user lands on the login page.
+const originalFetch = window.fetch.bind(window);
+window.fetch = function(...args) {
+    return originalFetch(...args).then(response => {
+        if (response.status === 401) location.reload();
+        return response;
+    });
+};
+
 // Forms with data-confirm ask first, in our own dialog: the browser's native one
 // shows the page's address as its title, even inside the Windows app's window.
 document.addEventListener('submit', event => {
@@ -12,6 +21,7 @@ document.addEventListener('submit', event => {
 
     const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('confirmModal'));
     document.getElementById('confirm-message').textContent = message;
+    document.getElementById('confirm-ok').textContent = form.dataset.confirmLabel || 'Delete';
     document.getElementById('confirm-ok').onclick = () => {
         modal.hide();
         form.submit();  // doesn't fire 'submit' again
@@ -64,6 +74,7 @@ function updateRunningBadge(count) {
 }
 
 function connectSSE() {
+    if (document.body.dataset.public) return;  // login/setup pages have no stream
     if (evtSource) {
         evtSource.close();
     }
