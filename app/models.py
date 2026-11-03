@@ -204,3 +204,16 @@ class RunError(db.Model):
             "message": self.message,
             "category": self.category,
         }
+
+
+class AppSetting(db.Model):
+    """App-wide settings that are edited in the UI, stored as JSON values.
+
+    Read and write through ``app.services.app_settings`` rather than directly.
+    """
+
+    key = db.Column(db.String(100), primary_key=True)
+    value = db.Column(db.Text, nullable=False, default="null")
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )

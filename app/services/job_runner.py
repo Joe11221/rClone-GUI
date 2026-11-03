@@ -14,9 +14,10 @@ class JobAlreadyRunning(Exception):
 
 
 class JobRunner:
-    def __init__(self, rclone_client, bandwidth=None):
+    def __init__(self, rclone_client, bandwidth=None, events=None):
         self.rclone = rclone_client
         self.bandwidth = bandwidth  # BandwidthController; None = no limits
+        self.events = events  # EventBus; None = nobody listening
         self._active_runs = {}  # {run_history_id: rclone_jobid}
         self._pending_retries = set()  # run_ids awaiting delayed retry
         self.suspects = SuspectTracker()

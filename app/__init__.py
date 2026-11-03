@@ -8,6 +8,7 @@ from app.extensions import db
 from app.rclone_client import RcloneClient
 from app.security import init_request_guards
 from app.services.bandwidth import BandwidthController, migrate_legacy_limits
+from app.services.events import EventBus
 from app.services.job_runner import JobRunner
 from app.services.scheduler_service import SchedulerService
 
@@ -94,8 +95,12 @@ def create_app(config_class=Config):
     bandwidth = BandwidthController(rclone, tz)
     app.config["BANDWIDTH"] = bandwidth
 
+    # Runner and health checks announce what happened; notifiers listen
+    events = EventBus()
+    app.config["EVENTS"] = events
+
     # Initialize job runner
-    job_runner = JobRunner(rclone, bandwidth=bandwidth)
+    job_runner = JobRunner(rclone, bandwidth=bandwidth, events=events)
     app.config["JOB_RUNNER"] = job_runner
 
     # Initialize scheduler
